@@ -1,0 +1,27 @@
+{
+    "rules": {
+        "tenants": {
+            "$tenantId": {
+                ".read": "auth != null && auth.token.tenantId === $tenantId",
+                "device_states": {
+                    "$deviceId": {
+                        ".read": "auth != null && auth.token.tenantId === $tenantId",
+                        ".write": "auth != null && auth.token.deviceId === $deviceId"
+                    }
+                },
+                "device_commands": {
+                    "$deviceId": {
+                        ".read": "auth != null && auth.token.deviceId === $deviceId",
+                        ".write": false
+                    }
+                },
+                "presence": {
+                    "$deviceId": {
+                        ".read": "auth != null && auth.token.tenantId === $tenantId",
+                        ".write": "auth != null && auth.token.deviceId === $deviceId"
+                    }
+                }
+            }
+        }
+    }
+}

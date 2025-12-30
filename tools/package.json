@@ -1,0 +1,17 @@
+{
+    "name": "tools",
+    "version": "1.0.0",
+    "dependencies": {
+        "firebase-admin": "^11.0.0",
+        "dotenv": "^16.0.0"
+    },
+    "devDependencies": {
+        "ts-node": "^10.0.0",
+        "typescript": "^5.0.0"
+    },
+    "scripts": {
+        "build": "tsc",
+        "create-super-admin": "node dist/create-super-admin.js",
+        "seed-devices": "node dist/seed-global-devices.js"
+    }
+}

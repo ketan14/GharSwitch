@@ -1,0 +1,31 @@
+# Service Account Keys - NEVER COMMIT
+serviceAccountKey.json
+*-firebase-adminsdk-*.json
+
+# Environment files
+.env
+.env.local
+.env*.local
+
+# Firebase cache
+.firebase/
+
+# Build output
+functions/lib/
+functions/dist/
+*.js
+*.js.map
+*.d.ts
+*.tsbuildinfo
+
+# Dependencies
+node_modules/
+
+# Logs
+*.log
+npm-debug.log*
+firebase-debug.log
+
+# OS files
+.DS_Store
+Thumbs.db

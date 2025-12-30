@@ -1,0 +1,80 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ========================================
+    // HELPER FUNCTIONS
+    // ========================================
+    
+    // Is the user authenticated?
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Get user's tenantId from custom claims
+    function getTenantId() {
+      return request.auth.token.tenantId;
+    }
+
+    // Get user's role for a specific tenant
+    function getRole(tenantId) {
+      return get(/databases/$(database)/documents/tenants/$(tenantId)/members/$(request.auth.uid)).data.role;
+    }
+
+    // ========================================
+    // GLOBAL DEVICE REGISTRY
+    // ========================================
+    
+    match /global_devices/{deviceId} {
+      // Anyone authenticated can read (to check genuineness during registration)
+      allow read: if isAuthenticated();
+      // NO ONE can write via the Client SDK (SuperAdmin/Manufacturing only)
+      allow write: if false;
+    }
+
+    // ========================================
+    // TENANT SCOPED DATA
+    // ========================================
+    
+    match /tenants/{tenantId} {
+      // Allow read if the user's custom claim matches the tenantId
+      allow read: if isAuthenticated() && getTenantId() == tenantId;
+      // Allow update only for ADMINs
+      allow update: if isAuthenticated() && getTenantId() == tenantId && getRole(tenantId) == 'ADMIN';
+      // Creation/deletion must go through Cloud Functions
+      allow create, delete: if false;
+      
+      // ========================================
+      // MEMBERS SUB-COLLECTION (RBAC)
+      // ========================================
+      
+      match /members/{uid} {
+        allow read: if isAuthenticated() && getTenantId() == tenantId;
+        // Membership changes MUST go through Cloud Functions (to prevent role escalation)
+        allow write: if false; 
+      }
+
+      // ========================================
+      // DEVICES SUB-COLLECTION
+      // ========================================
+      
+      match /devices/{deviceId} {
+        allow read: if isAuthenticated() && getTenantId() == tenantId;
+        // OPERATORs and ADMINs can update config (e.g., nicknames, settings)
+        allow update: if isAuthenticated() && getTenantId() == tenantId 
+                      && getRole(tenantId) in ['ADMIN', 'OPERATOR'];
+        // Device registration/deletion MUST go through Cloud Functions
+        allow create, delete: if false;
+      }
+    }
+
+    // ========================================
+    // USER PROFILES
+    // ========================================
+    
+    match /users/{uid} {
+      // Users can only read/write their own profile
+      allow read, write: if isAuthenticated() && request.auth.uid == uid;
+    }
+  }
+}

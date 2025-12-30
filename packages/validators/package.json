@@ -1,0 +1,16 @@
+{
+    "name": "@ghar-switch/validators",
+    "version": "1.0.0",
+    "main": "dist/index.js",
+    "types": "dist/index.d.ts",
+    "scripts": {
+        "build": "tsc",
+        "test": "echo 'no tests'"
+    },
+    "dependencies": {
+        "@ghar-switch/domain-types": "*"
+    },
+    "devDependencies": {
+        "typescript": "^5.0.0"
+    }
+}

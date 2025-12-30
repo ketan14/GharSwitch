@@ -1,0 +1,24 @@
+{
+  "name": "ghar-switch-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "backend/firebase/functions",
+    "packages/*",
+    "tools"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "test": "npm run test --workspaces",
+    "lint": "npm run lint --workspaces",
+    "deploy": "firebase deploy",
+    "deploy:dev": "firebase use default && firebase deploy",
+    "deploy:prod": "firebase use prod && firebase deploy"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "eslint": "^8.0.0",
+    "prettier": "^3.0.0"
+  }
+}
