@@ -5,50 +5,50 @@ import RegisterDeviceForm from '../../components/RegisterDeviceForm';
 import { useRouter } from 'next/router';
 
 export default function AdminPage() {
-    const { user, tenantId, role, loading, signOut } = useAuth();
-    const router = useRouter();
+  const { user, tenantId, role, loading, signOut } = useAuth();
+  const router = useRouter();
 
-    if (loading) {
-        return <div>Loading...</div>;
-    }
+  if (loading) {
+    return <div>Loading...</div>;
+  }
 
-    if (!user) {
-        router.push('/login');
-        return null;
-    }
+  if (!user) {
+    router.push('/login');
+    return null;
+  }
 
-    // Only admins can access this page
-    if (role !== 'ADMIN' && role !== 'admin') {
-        router.push('/user');
-        return null;
-    }
+  // Only admins can access this page
+  if (role !== 'super_admin' && role !== 'tenant_admin') {
+    router.push('/user');
+    return null;
+  }
 
-    return (
-        <div className="admin-page">
-            <header className="header">
-                <div className="header-content">
-                    <h1>Admin Dashboard</h1>
-                    <div className="user-info">
-                        <span className="user-email">{user.email}</span>
-                        <span className="user-role">{role}</span>
-                        <button onClick={signOut} className="logout-btn">Logout</button>
-                    </div>
-                </div>
-            </header>
+  return (
+    <div className="admin-page">
+      <header className="header">
+        <div className="header-content">
+          <h1>Admin Dashboard</h1>
+          <div className="user-info">
+            <span className="user-email">{user.email}</span>
+            <span className="user-role">{role}</span>
+            <button onClick={signOut} className="logout-btn">Logout</button>
+          </div>
+        </div>
+      </header>
 
-            <main className="main-content">
-                <div className="admin-grid">
-                    <div className="section">
-                        <RegisterDeviceForm />
-                    </div>
+      <main className="main-content">
+        <div className="admin-grid">
+          <div className="section">
+            <RegisterDeviceForm />
+          </div>
 
-                    <div className="section full-width">
-                        <DeviceList />
-                    </div>
-                </div>
-            </main>
+          <div className="section full-width">
+            <DeviceList />
+          </div>
+        </div>
+      </main>
 
-            <style jsx>{`
+      <style jsx>{`
         .admin-page {
           min-height: 100vh;
           background: #f5f5f5;
@@ -131,6 +131,6 @@ export default function AdminPage() {
           }
         }
       `}</style>
-        </div>
-    );
+    </div>
+  );
 }

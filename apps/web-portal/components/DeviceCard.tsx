@@ -4,72 +4,72 @@ import { useSendCommand, SwitchTarget } from '../hooks/useSendCommand';
 import { useAuth } from '../context/AuthContext';
 
 interface DeviceCardProps {
-    deviceId: string;
-    deviceName: string;
-    deviceType: string;
-    status?: 'ONLINE' | 'OFFLINE';
+  deviceId: string;
+  deviceName: string;
+  deviceType: string;
+  status?: 'ONLINE' | 'OFFLINE';
 }
 
 export default function DeviceCard({ deviceId, deviceName, deviceType, status }: DeviceCardProps) {
-    const { state, loading: stateLoading } = useDeviceState(deviceId);
-    const { sendCommand, loading: commandLoading } = useSendCommand();
-    const { role } = useAuth();
+  const { state, loading: stateLoading } = useDeviceState(deviceId);
+  const { sendCommand, loading: commandLoading } = useSendCommand();
+  const { role } = useAuth();
 
-    const canControl = role === 'ADMIN' || role === 'OPERATOR' || role === 'admin';
+  const canControl = role === 'super_admin' || role === 'tenant_admin' || role === 'user';
 
-    const handleToggle = async (target: SwitchTarget, currentState: boolean) => {
-        if (!canControl) return;
+  const handleToggle = async (target: SwitchTarget, currentState: boolean) => {
+    if (!canControl) return;
 
-        try {
-            await sendCommand(deviceId, target, !currentState);
-        } catch (error) {
-            console.error('Failed to send command:', error);
-            alert('Failed to toggle switch. Please try again.');
-        }
-    };
+    try {
+      await sendCommand(deviceId, target, !currentState);
+    } catch (error) {
+      console.error('Failed to send command:', error);
+      alert('Failed to toggle switch. Please try again.');
+    }
+  };
 
-    const switches: SwitchTarget[] = ['s1', 's2', 's3', 's4'];
+  const switches: SwitchTarget[] = ['s1', 's2', 's3', 's4'];
 
-    return (
-        <div className="device-card">
-            <div className="device-header">
-                <h3>{deviceName}</h3>
-                <span className={`status-badge ${status?.toLowerCase()}`}>
-                    {status || 'UNKNOWN'}
-                </span>
+  return (
+    <div className="device-card">
+      <div className="device-header">
+        <h3>{deviceName}</h3>
+        <span className={`status-badge ${status?.toLowerCase()}`}>
+          {status || 'UNKNOWN'}
+        </span>
+      </div>
+
+      <div className="device-type">{deviceType}</div>
+
+      <div className="switches-grid">
+        {switches.map((switchId, index) => {
+          const switchState = state?.switches?.[switchId] ?? false;
+
+          return (
+            <div key={switchId} className="switch-container">
+              <label className="switch-label">Switch {index + 1}</label>
+              <button
+                className={`switch-button ${switchState ? 'on' : 'off'}`}
+                onClick={() => handleToggle(switchId, switchState)}
+                disabled={!canControl || commandLoading || stateLoading}
+              >
+                {switchState ? 'ON' : 'OFF'}
+              </button>
             </div>
+          );
+        })}
+      </div>
 
-            <div className="device-type">{deviceType}</div>
+      {state?.diagnostics && (
+        <div className="diagnostics">
+          <small>
+            Signal: {state.diagnostics.rssi}dBm |
+            Uptime: {Math.floor(state.diagnostics.uptime / 60)}m
+          </small>
+        </div>
+      )}
 
-            <div className="switches-grid">
-                {switches.map((switchId, index) => {
-                    const switchState = state?.switches?.[switchId] ?? false;
-
-                    return (
-                        <div key={switchId} className="switch-container">
-                            <label className="switch-label">Switch {index + 1}</label>
-                            <button
-                                className={`switch-button ${switchState ? 'on' : 'off'}`}
-                                onClick={() => handleToggle(switchId, switchState)}
-                                disabled={!canControl || commandLoading || stateLoading}
-                            >
-                                {switchState ? 'ON' : 'OFF'}
-                            </button>
-                        </div>
-                    );
-                })}
-            </div>
-
-            {state?.diagnostics && (
-                <div className="diagnostics">
-                    <small>
-                        Signal: {state.diagnostics.rssi}dBm |
-                        Uptime: {Math.floor(state.diagnostics.uptime / 60)}m
-                    </small>
-                </div>
-            )}
-
-            <style jsx>{`
+      <style jsx>{`
         .device-card {
           border: 1px solid #e0e0e0;
           border-radius: 12px;
@@ -167,6 +167,6 @@ export default function DeviceCard({ deviceId, deviceName, deviceType, status }:
           font-size: 12px;
         }
       `}</style>
-        </div>
-    );
+    </div>
+  );
 }

@@ -4,7 +4,7 @@ import { auth } from '../lib/firebase';
 import { useRouter } from 'next/router';
 
 // Extended User type to include custom claims if needed locally
-type UserRole = 'super_admin' | 'admin' | 'user' | null;
+type UserRole = 'super_admin' | 'admin' | 'user' | 'tenant_admin' | null;
 
 interface AuthContextType {
     user: User | null;

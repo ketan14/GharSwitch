@@ -1,10 +1,10 @@
 import * as admin from 'firebase-admin';
 import * as dotenv from 'dotenv';
 
-dotenv.config({ path: '../.env.local' });
+dotenv.config({ path: '../apps/web-portal/.env.local' });
 
 // Initialize Firebase Admin
-const serviceAccount = require('../backend/firebase/serviceAccountKey.json');
+const serviceAccount = require('../service-account.json');
 
 admin.initializeApp({
     credential: admin.credential.cert(serviceAccount),
