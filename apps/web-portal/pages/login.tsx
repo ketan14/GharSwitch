@@ -13,7 +13,7 @@ export default function LoginPage() {
 
     // Redirect based on role
     if (role === 'super_admin') router.push('/super-admin');
-    else if (role === 'admin') router.push('/admin');
+    else if (role === 'admin' || role === 'tenant_admin') router.push('/admin');
     else if (role === 'user') router.push('/user');
 
     const handleLogin = async (e: React.FormEvent) => {

@@ -13,6 +13,7 @@
     "test": "npm run test --workspaces",
     "lint": "npm run lint --workspaces",
     "deploy": "firebase deploy",
+    "deploy-functions": "firebase deploy --only functions",
     "deploy:dev": "firebase use default && firebase deploy",
     "deploy:prod": "firebase use prod && firebase deploy"
   },

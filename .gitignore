@@ -39,7 +39,7 @@ firebase-debug.log
 
 # Build outputs
 dist/
-lib/
+/lib/
 *.js
 *.js.map
 *.d.ts

@@ -40,7 +40,9 @@ service cloud.firestore {
       // Allow read if the user's custom claim matches the tenantId
       allow read: if isAuthenticated() && getTenantId() == tenantId;
       // Allow update only for ADMINs
-      allow update: if isAuthenticated() && getTenantId() == tenantId && getRole(tenantId) == 'ADMIN';
+      // Allow update only for tenant_admin or super_admin
+      allow update: if isAuthenticated() && getTenantId() == tenantId 
+                    && getRole(tenantId) in ['tenant_admin', 'super_admin'];
       // Creation/deletion must go through Cloud Functions
       allow create, delete: if false;
       
@@ -53,16 +55,16 @@ service cloud.firestore {
         // Membership changes MUST go through Cloud Functions (to prevent role escalation)
         allow write: if false; 
       }
-
+ 
       // ========================================
       // DEVICES SUB-COLLECTION
       // ========================================
       
       match /devices/{deviceId} {
         allow read: if isAuthenticated() && getTenantId() == tenantId;
-        // OPERATORs and ADMINs can update config (e.g., nicknames, settings)
+        // tenant_admin, admin, and user can update device config
         allow update: if isAuthenticated() && getTenantId() == tenantId 
-                      && getRole(tenantId) in ['ADMIN', 'OPERATOR'];
+                      && getRole(tenantId) in ['tenant_admin', 'admin', 'user', 'super_admin'];
         // Device registration/deletion MUST go through Cloud Functions
         allow create, delete: if false;
       }
