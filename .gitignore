@@ -67,3 +67,10 @@ out/
 # Misc
 *.bak
 *.tmp
+users.json
+service-account.json
+
+# Python Simulator
+iot/python-simulator/.env
+iot/python-simulator/venv/
+iot/python-simulator/__pycache__/

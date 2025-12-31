@@ -1,4 +1,5 @@
 import * as functions from 'firebase-functions';
+import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import * as admin from 'firebase-admin';
 
 // ========================================
@@ -27,6 +28,12 @@ export interface RegisterDeviceRequest {
 export interface RegisterDeviceResponse {
     success: boolean;
     device: any;
+}
+
+export interface InviteUserRequest {
+    email: string;
+    password?: string;
+    role: 'admin' | 'user';
 }
 
 export interface DeviceCommand {
@@ -72,57 +79,61 @@ function generateUniqueId(): string {
 }
 
 // ========================================
-// 1. SEND COMMAND (Callable)
+// 1. SEND COMMAND (Callable V2)
 // ========================================
-export const sendCommand = functions.https.onCall((data: SendCommandRequest, context) => {
-    return new Promise((resolve, reject) => {
-        // 1. Authenticate Caller
-        if (!context.auth) {
-            throw new functions.https.HttpsError('unauthenticated', 'Login required');
-        }
+export const sendCommand = onCall({ cors: true }, async (request) => {
+    // 1. Authenticate Caller
+    if (!request.auth) {
+        throw new HttpsError('unauthenticated', 'Login required');
+    }
 
-        const caller = context.auth;
-        const tenantId = caller.token.tenantId as string;
+    const caller = request.auth;
+    const tenantId = caller.token.tenantId as string;
 
-        if (!tenantId) {
-            throw new functions.https.HttpsError('failed-precondition', 'User has no tenant assigned');
-        }
+    if (!tenantId) {
+        throw new HttpsError('failed-precondition', 'User has no tenant assigned');
+    }
 
-        // 2. Validate Payload
-        const { deviceId, action, target } = data;
-        if (!deviceId || typeof action !== 'boolean' || !target) {
-            throw new functions.https.HttpsError('invalid-argument', 'Invalid payload');
-        }
+    // 2. Validate Payload
+    const { deviceId, action, target } = request.data as SendCommandRequest;
+    if (!deviceId || typeof action !== 'boolean' || !target) {
+        throw new HttpsError('invalid-argument', 'Invalid payload');
+    }
 
+    try {
         // 3. Authorization (Check Role)
-        db.collection('tenants').doc(tenantId).collection('members').doc(caller.uid).get()
-            .then(async (memberDoc) => {
-                if (!memberDoc.exists) {
-                    throw new functions.https.HttpsError('permission-denied', 'Not a member of this tenant');
-                }
+        const memberSnap = await db.collection('tenants').doc(tenantId).collection('members').doc(caller.uid).get();
 
-                const memberRole = memberDoc.data()?.role as UserRole;
-                const canControl = ['super_admin', 'tenant_admin', 'admin', 'user'].includes(memberRole);
+        if (!memberSnap.exists) {
+            throw new HttpsError('permission-denied', 'Not a member of this tenant');
+        }
 
-                if (!canControl) {
-                    throw new functions.https.HttpsError('permission-denied', 'You do not have permission to send commands');
-                }
+        const rawRole = memberSnap.data()?.role as string;
+        const memberRole = (rawRole || '').toLowerCase().replace('-', '_');
+        const canControl = ['super_admin', 'tenant_admin', 'admin', 'user'].includes(memberRole);
 
-                // 4. Verification (Device Ownership)
-                const deviceDoc = await db.collection('tenants').doc(tenantId).collection('devices').doc(deviceId).get();
-                if (!deviceDoc.exists) {
-                    throw new functions.https.HttpsError('not-found', 'Device not registered to this tenant');
-                }
+        if (!canControl) {
+            throw new HttpsError('permission-denied', 'You do not have permission to send commands');
+        }
 
-                // 5. Execution (RTDB Write)
-                const cmdId = generateUniqueId();
-                const command: DeviceCommand = { action, target, timestamp: Date.now() };
+        // 4. Verification (Device Ownership)
+        const deviceDoc = await db.collection('tenants').doc(tenantId).collection('devices').doc(deviceId).get();
+        if (!deviceDoc.exists) {
+            throw new HttpsError('not-found', 'Device not registered to this tenant');
+        }
 
-                await rtdb.ref(`tenants/${tenantId}/device_commands/${deviceId}/pending/${cmdId}`).set(command);
-                resolve({ success: true, commandId: cmdId });
-            })
-            .catch(reject);
-    });
+        // 5. Execution (RTDB Write)
+        const cmdId = generateUniqueId();
+        const command: DeviceCommand = { action, target, timestamp: Date.now() };
+
+        await rtdb.ref(`tenants/${tenantId}/device_commands/${deviceId}/pending/${cmdId}`).set(command);
+
+        return { success: true, commandId: cmdId };
+    } catch (error: any) {
+        console.error('Error in sendCommand:', error);
+        if (error instanceof HttpsError) throw error;
+        throw new HttpsError('internal', error.message || 'Failed to send command');
+    }
 });
 
 // ========================================
@@ -246,6 +257,85 @@ export const registerDevice = functions.https.onCall(async (data: RegisterDevice
     });
 
     return { success: true, device: result };
+});
+
+// ========================================
+// 4. INVITE USER (Callable)
+// ========================================
+export const inviteUser = functions.https.onCall(async (data: InviteUserRequest, context) => {
+    if (!context.auth) {
+        throw new functions.https.HttpsError('unauthenticated', 'Login required');
+    }
+
+    const tenantId = context.auth.token.tenantId as string;
+    const callerRole = context.auth.token.role as string;
+    const { email, password, role } = data;
+
+    // 0. Authorization: Only admins can invite users
+    if (callerRole !== 'tenant_admin' && callerRole !== 'super_admin') {
+        throw new functions.https.HttpsError('permission-denied', 'Only admins can invite members');
+    }
+
+    if (!tenantId || !email || !role) {
+        throw new functions.https.HttpsError('invalid-argument', 'Missing required fields');
+    }
+
+    try {
+        const result = await db.runTransaction(async (tx) => {
+            // 1. Enforce Quotas
+            const tenantRef = db.collection('tenants').doc(tenantId);
+            const tenantSnap = await tx.get(tenantRef);
+
+            if (!tenantSnap.exists) {
+                throw new functions.https.HttpsError('not-found', 'Tenant not found');
+            }
+
+            const tenant = tenantSnap.data() as Tenant;
+            const membersSnap = await db.collection('tenants').doc(tenantId).collection('members').get();
+
+            if (membersSnap.size >= tenant.quota.maxUsers) {
+                throw new functions.https.HttpsError('resource-exhausted', 'User quota exceeded');
+            }
+
+            // 2. Create User in Auth
+            const userRecord = await admin.auth().createUser({
+                email,
+                password: password || 'Welcome123!', // Generic temp password
+                displayName: email.split('@')[0]
+            });
+
+            // 3. Set Claims (Immediate access for RTDB/Rules)
+            await admin.auth().setCustomUserClaims(userRecord.uid, {
+                role: role,
+                tenantId: tenantId
+            });
+
+            // 4. Create Member Document
+            const memberRef = db.collection('tenants').doc(tenantId).collection('members').doc(userRecord.uid);
+            tx.set(memberRef, {
+                role: role,
+                joinedAt: admin.firestore.FieldValue.serverTimestamp()
+            });
+
+            // 5. Create User Profile
+            const userProfileRef = db.collection('users').doc(userRecord.uid);
+            tx.set(userProfileRef, {
+                email,
+                currentTenantId: tenantId,
+                ownedTenants: []
+            });
+
+            return { uid: userRecord.uid, email: userRecord.email };
+        });
+
+        return { success: true, ...result };
+    } catch (error: any) {
+        console.error('Invite Error:', error);
+        if (error.code === 'auth/email-already-exists') {
+            throw new functions.https.HttpsError('already-exists', 'User already exists');
+        }
+        throw new functions.https.HttpsError('internal', error.message || 'Failed to invite user');
+    }
 });
 
 

@@ -2,6 +2,7 @@ import React from 'react';
 import { useAuth } from '../../context/AuthContext';
 import DeviceList from '../../components/DeviceList';
 import RegisterDeviceForm from '../../components/RegisterDeviceForm';
+import MemberManagement from '../../components/MemberManagement';
 import { useRouter } from 'next/router';
 
 export default function AdminPage() {
@@ -40,6 +41,10 @@ export default function AdminPage() {
         <div className="admin-grid">
           <div className="section">
             <RegisterDeviceForm />
+          </div>
+
+          <div className="section">
+            <MemberManagement />
           </div>
 
           <div className="section full-width">

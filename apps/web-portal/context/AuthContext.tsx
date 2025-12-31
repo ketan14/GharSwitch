@@ -38,8 +38,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 const tokenResult = await currentUser.getIdTokenResult(true);
                 const claims = tokenResult.claims;
 
-                setRole((claims.role as UserRole) || 'user'); // Default to user if undefined
+                const rawRole = (claims.role as string || 'user').toLowerCase().replace('-', '_');
+                setRole(rawRole as UserRole);
                 setTenantId((claims.tenantId as string) || null);
+
+                console.group('🔐 Auth Debug');
+                console.log('User:', currentUser.email);
+                console.log('Role:', claims.role);
+                console.log('TenantId:', claims.tenantId);
+                console.log('Full Claims:', claims);
+                console.groupEnd();
             } else {
                 setRole(null);
                 setTenantId(null);

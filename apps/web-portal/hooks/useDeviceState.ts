@@ -31,27 +31,41 @@ export function useDeviceState(deviceId: string | null) {
             setLoading(false);
             return;
         }
+        const path = `tenants/${tenantId}/device_states/${deviceId}`;
+        console.log(`[useDeviceState] 🔌 Connecting to: ${path}`);
+        const stateRef = ref(rtdb, path);
 
-        const stateRef = ref(rtdb, `tenants/${tenantId}/device_states/${deviceId}`);
+        // Fail-safe: Force loading to false if Firebase doesn't respond in 5s
+        const timeout = setTimeout(() => {
+            if (loading) {
+                console.warn(`[useDeviceState] ⏳ Timeout waiting for ${deviceId} state. Forcing load.`);
+                setLoading(false);
+            }
+        }, 5000);
 
         const unsubscribe = onValue(
             stateRef,
             (snapshot) => {
+                clearTimeout(timeout);
                 const data = snapshot.val();
+                console.log(`[useDeviceState] ✅ Received for ${deviceId}:`, data);
                 if (data) {
                     setState(data as DeviceState);
                 } else {
+                    console.log(`[useDeviceState] ℹ️ Path exists but is empty for ${deviceId}`);
                     setState(null);
                 }
                 setLoading(false);
             },
             (error) => {
-                console.error('Error fetching device state:', error);
+                clearTimeout(timeout);
+                console.error(`[useDeviceState] ❌ Error for ${deviceId}:`, error);
                 setLoading(false);
             }
         );
 
         return () => {
+            clearTimeout(timeout);
             off(stateRef, 'value', unsubscribe);
         };
     }, [tenantId, deviceId]);

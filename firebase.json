@@ -4,7 +4,7 @@
     "indexes": "backend/firebase/firestore.indexes.json"
   },
   "database": {
-    "rules": "database.rules.json"
+    "rules": "backend/firebase/rtdb.rules.json"
   },
   "storage": {
     "rules": "backend/firebase/storage.rules"

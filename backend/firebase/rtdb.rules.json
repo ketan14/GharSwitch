@@ -2,23 +2,29 @@
     "rules": {
         "tenants": {
             "$tenantId": {
-                ".read": "auth != null && auth.token.tenantId === $tenantId",
+                // Allow reading tenant node if the user is a super_admin or belongs to this tenant
+                ".read": "auth != null && (auth.token.role === 'super_admin' || auth.token.tenantId === $tenantId)",
                 "device_states": {
+                    // Allow scanning device states for the tenant
+                    ".read": "auth != null && (auth.token.role === 'super_admin' || auth.token.tenantId === $tenantId)",
                     "$deviceId": {
-                        ".read": "auth != null && auth.token.tenantId === $tenantId",
-                        ".write": "auth != null && auth.token.deviceId === $deviceId"
+                        ".read": "auth != null && (auth.token.role === 'super_admin' || auth.token.tenantId === $tenantId)",
+                        ".write": "auth != null && (auth.token.deviceId === $deviceId || auth.token.role === 'super_admin')"
                     }
                 },
                 "device_commands": {
                     "$deviceId": {
-                        ".read": "auth != null && auth.token.deviceId === $deviceId",
-                        ".write": false
+                        ".read": "auth != null && (auth.token.deviceId === $deviceId || auth.token.role === 'super_admin')",
+                        "pending": {
+                            ".write": "auth != null && (auth.token.role === 'super_admin' || auth.token.tenantId === $tenantId)"
+                        }
                     }
                 },
                 "presence": {
+                    ".read": "auth != null && (auth.token.role === 'super_admin' || auth.token.tenantId === $tenantId)",
                     "$deviceId": {
-                        ".read": "auth != null && auth.token.tenantId === $tenantId",
-                        ".write": "auth != null && auth.token.deviceId === $deviceId"
+                        ".read": "auth != null && (auth.token.role === 'super_admin' || auth.token.tenantId === $tenantId)",
+                        ".write": "auth != null && (auth.token.deviceId === $deviceId || auth.token.role === 'super_admin')"
                     }
                 }
             }

@@ -14,8 +14,18 @@ export default function DeviceCard({ deviceId, deviceName, deviceType, status }:
   const { state, loading: stateLoading } = useDeviceState(deviceId);
   const { sendCommand, loading: commandLoading } = useSendCommand();
   const { role } = useAuth();
+  // Normalize role for comparison (handles 'ADMIN' or 'tenant-admin')
+  const normalizedRole = role?.toLowerCase().replace('-', '_');
+  const canControl = ['super_admin', 'tenant_admin', 'admin', 'user'].includes(normalizedRole || '');
 
-  const canControl = role === 'super_admin' || role === 'tenant_admin' || role === 'user';
+  console.log(`DeviceCard [${deviceId}] Debug:`, {
+    canControl,
+    commandLoading,
+    stateLoading,
+    role,
+    normalizedRole,
+    stateExists: !!state
+  });
 
   const handleToggle = async (target: SwitchTarget, currentState: boolean) => {
     if (!canControl) return;
@@ -29,6 +39,8 @@ export default function DeviceCard({ deviceId, deviceName, deviceType, status }:
   };
 
   const switches: SwitchTarget[] = ['s1', 's2', 's3', 's4'];
+
+  const isOffline = status === 'OFFLINE';
 
   return (
     <div className="device-card">
@@ -51,7 +63,7 @@ export default function DeviceCard({ deviceId, deviceName, deviceType, status }:
               <button
                 className={`switch-button ${switchState ? 'on' : 'off'}`}
                 onClick={() => handleToggle(switchId, switchState)}
-                disabled={!canControl || commandLoading || stateLoading}
+                disabled={!canControl || commandLoading || stateLoading || isOffline}
               >
                 {switchState ? 'ON' : 'OFF'}
               </button>
@@ -60,12 +72,18 @@ export default function DeviceCard({ deviceId, deviceName, deviceType, status }:
         })}
       </div>
 
-      {state?.diagnostics && (
+      {(state?.diagnostics || !canControl || stateLoading || isOffline) && (
         <div className="diagnostics">
-          <small>
-            Signal: {state.diagnostics.rssi}dBm |
-            Uptime: {Math.floor(state.diagnostics.uptime / 60)}m
-          </small>
+          {isOffline && <div style={{ color: '#d32f2f', fontWeight: 600 }}>Device is Offline</div>}
+          {!isOffline && !canControl && <div style={{ color: 'red' }}>Role "{role}" not authorized</div>}
+          {!isOffline && stateLoading && <div style={{ color: 'blue' }}>Syncing with device...</div>}
+
+          {state?.diagnostics && (
+            <small>
+              Signal: {state.diagnostics.rssi}dBm |
+              Uptime: {Math.floor(state.diagnostics.uptime / 60)}m
+            </small>
+          )}
         </div>
       )}
 
