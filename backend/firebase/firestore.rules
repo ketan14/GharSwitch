@@ -16,6 +16,11 @@ service cloud.firestore {
       return request.auth.token.tenantId;
     }
 
+    // Is the user a super_admin?
+    function isSuperAdmin() {
+      return request.auth.token.role == 'super_admin';
+    }
+
     // Get user's role for a specific tenant
     function getRole(tenantId) {
       return get(/databases/$(database)/documents/tenants/$(tenantId)/members/$(request.auth.uid)).data.role;
@@ -77,6 +82,32 @@ service cloud.firestore {
     match /users/{uid} {
       // Users can only read/write their own profile
       allow read, write: if isAuthenticated() && request.auth.uid == uid;
+      // Super Admin can read all users (ReadOnly)
+      allow read: if isAuthenticated() && isSuperAdmin();
+    }
+
+    // ========================================
+    // ADMIN MONITORING VIEWS
+    // ========================================
+    
+    match /adminViews/{viewId} {
+        match /users/{userId} {
+            // Only Super Admins can read monitoring summaries
+            allow read: if isAuthenticated() && isSuperAdmin();
+            // NO ONE can write via the Client SDK (Backend ONLY)
+            allow write: if false;
+        }
+    }
+
+    // ========================================
+    // AUDIT LOGS
+    // ========================================
+    
+    match /auditLogs/{logId} {
+        // Super Admins can read logs for accountability
+        allow read: if isAuthenticated() && isSuperAdmin();
+        // Backend ONLY writes
+        allow write: if false;
     }
   }
 }

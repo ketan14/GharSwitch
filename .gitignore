@@ -74,3 +74,7 @@ service-account.json
 iot/python-simulator/.env
 iot/python-simulator/venv/
 iot/python-simulator/__pycache__/
+
+# IoT Hardware Configs
+iot/esp32/config.py
+iot/pico/config.py

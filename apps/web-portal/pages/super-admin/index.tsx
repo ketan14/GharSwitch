@@ -1,79 +1,76 @@
 import React from 'react';
 import { useAuth } from '../../context/AuthContext';
 import CreateTenantForm from '../../components/CreateTenantForm';
+import TenantManagement from '../../components/TenantManagement';
+import PlatformSettings from '../../components/PlatformSettings';
+import GlobalDeviceManagement from '../../components/GlobalDeviceManagement';
+import UserManagement from '../../components/UserManagement';
 import { useRouter } from 'next/router';
 
 export default function SuperAdminPage() {
-    const { user, role, loading, signOut } = useAuth();
-    const router = useRouter();
+  const { user, role, loading, signOut } = useAuth();
+  const router = useRouter();
 
-    if (loading) {
-        return <div>Loading...</div>;
-    }
+  if (loading) {
+    return <div>Loading...</div>;
+  }
 
-    if (!user) {
-        router.push('/login');
-        return null;
-    }
+  if (!user) {
+    router.push('/login');
+    return null;
+  }
 
-    // Only super admins can access this page
-    if (role !== 'super_admin') {
-        router.push('/login');
-        return null;
-    }
+  // Only super admins can access this page
+  if (role !== 'super_admin') {
+    router.push('/login');
+    return null;
+  }
 
-    return (
-        <div className="super-admin-page">
-            <header className="header">
-                <div className="header-content">
-                    <h1>Super Admin Dashboard</h1>
-                    <div className="user-info">
-                        <span className="user-email">{user.email}</span>
-                        <span className="user-role">SUPER ADMIN</span>
-                        <button onClick={signOut} className="logout-btn">Logout</button>
-                    </div>
-                </div>
-            </header>
+  return (
+    <div className="super-admin-page">
+      <header className="header">
+        <div className="header-content">
+          <h1>Super Admin Dashboard</h1>
+          <div className="user-info">
+            <span className="user-email">{user.email}</span>
+            <span className="user-role">SUPER ADMIN</span>
+            <button onClick={signOut} className="logout-btn">Logout</button>
+          </div>
+        </div>
+      </header>
 
-            <main className="main-content">
-                <div className="welcome-section">
-                    <h2>Welcome, Super Administrator</h2>
-                    <p>You have full access to create and manage tenants across the platform.</p>
-                </div>
+      <main className="main-content">
+        <div className="welcome-section">
+          <h2>Welcome, Super Administrator</h2>
+          <p>You have full access to create and manage tenants across the platform.</p>
+        </div>
 
-                <div className="admin-grid">
-                    <div className="section">
-                        <CreateTenantForm />
-                    </div>
+        <div className="admin-grid">
+          <div className="admin-column">
+            <div className="section">
+              <CreateTenantForm />
+            </div>
+            <div className="section">
+              <PlatformSettings />
+            </div>
+          </div>
 
-                    <div className="section info-panel">
-                        <h3>Platform Overview</h3>
-                        <div className="info-card">
-                            <h4>Tenant Management</h4>
-                            <p>Create new tenants with dedicated admin accounts. Each tenant is isolated with its own devices and users.</p>
-                        </div>
+          <div className="admin-column">
+            <div className="section">
+              <TenantManagement />
+            </div>
+            <div className="section">
+              <GlobalDeviceManagement />
+            </div>
+          </div>
+        </div>
 
-                        <div className="info-card">
-                            <h4>Subscription Tiers</h4>
-                            <ul>
-                                <li><strong>BASIC:</strong> 10 devices, 5 users</li>
-                                <li><strong>PRO:</strong> 50 devices, 20 users</li>
-                            </ul>
-                        </div>
+        <div className="admin-full-row">
+          <UserManagement />
+        </div>
+      </main>
 
-                        <div className="info-card">
-                            <h4>Quick Actions</h4>
-                            <ul>
-                                <li>Create tenant → Admin receives credentials</li>
-                                <li>Admin logs in → Registers devices</li>
-                                <li>Users control switches in real-time</li>
-                            </ul>
-                        </div>
-                    </div>
-                </div>
-            </main>
-
-            <style jsx>{`
+      <style jsx>{`
         .super-admin-page {
           min-height: 100vh;
           background: #f5f5f5;
@@ -161,6 +158,24 @@ export default function SuperAdminPage() {
           display: grid;
           grid-template-columns: 1fr 1fr;
           gap: 24px;
+          align-items: start;
+        }
+
+        .admin-column {
+          display: flex;
+          flex-direction: column;
+          gap: 24px;
+        }
+
+        .admin-full-row {
+          margin-top: 24px;
+        }
+
+        .section {
+          background: white;
+          border-radius: 12px;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+          overflow: hidden;
         }
 
         .info-panel {
@@ -211,6 +226,6 @@ export default function SuperAdminPage() {
           }
         }
       `}</style>
-        </div>
-    );
+    </div>
+  );
 }

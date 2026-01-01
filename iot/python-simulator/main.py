@@ -14,10 +14,10 @@ load_dotenv()
 # ========================================
 DEVICE_ID = os.getenv("DEVICE_ID")
 TENANT_ID = os.getenv("TENANT_ID")
-DATABASE_URL = os.getenv("DATABASE_URL")
+DATABASE_URL = os.getenv("DATABASE_URL", "https://gharswitch-default-rtdb.asia-southeast1.firebasedatabase.app")
 
-if not DEVICE_ID or not TENANT_ID or not DATABASE_URL:
-    print("ERROR: DEVICE_ID, TENANT_ID, and DATABASE_URL must be set in .env file")
+if not DEVICE_ID or not TENANT_ID:
+    print("ERROR: DEVICE_ID and TENANT_ID must be set in .env file")
     sys.exit(1)
 
 # ========================================
