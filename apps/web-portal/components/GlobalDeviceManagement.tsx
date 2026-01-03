@@ -42,7 +42,7 @@ export default function GlobalDeviceManagement() {
                         {devices.map((device) => (
                             <tr key={device.id} className={device.active === false ? 'suspended' : ''}>
                                 <td className="font-mono">{device.id}</td>
-                                <td>{device.model}</td>
+                                <td>{device.model} - {device.deviceId}</td>
                                 <td>
                                     <span className={`badge ${device.active !== false ? 'active' : 'inactive'}`}>
                                         {device.active !== false ? 'ACTIVE' : 'DISABLED'}
