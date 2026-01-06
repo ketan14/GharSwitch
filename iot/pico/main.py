@@ -2,80 +2,122 @@ import urequests
 import time
 import json
 import config
+import utime
+import ntptime
+#import hmac
+import hashlib
+import binascii
+from machine import Pin
+import gc, ujson
+import urequests
+import time
+import json
 from machine import Pin
 
-# Configuration
+# ====== Firebase RTDB Setup ======
+ 
+DATABASE_URL = config.DB_URL
+
+# Configuration from config.py
 DB_URL = config.DB_URL
 TENANT_ID = config.TENANT_ID
 DEVICE_ID = config.DEVICE_ID
-#DEVICE_TOKEN = getattr(config, 'DEVICE_TOKEN', None)
-
-# Hardware - 4 Channel Relay Pins (Pico W specific)
+SHARED_SECRET = config.SHARED_SECRET  # Ensure this is in your config.py
+MINT_TOKEN_URL = configMINT_TOKEN_URL
+# ====== Hardware Setup ======
 pins = {
-    "s1": Pin(15, Pin.OUT), # GP15
-    "s2": Pin(14, Pin.OUT), # GP14
-    "s3": Pin(13, Pin.OUT), # GP13
-    "s4": Pin(12, Pin.OUT)  # GP12
+    "s1": Pin(15, Pin.OUT),
+    "s2": Pin(14, Pin.OUT),
+    "s3": Pin(13, Pin.OUT),
+    "s4": Pin(12, Pin.OUT)
 }
 
-# Local State
-state = {"s1": False, "s2": False, "s3": False, "s4": False}
+# Local cache
+device_state = {k: False for k in pins.keys()}
 
-def update_hardware():
-    for key, val in state.items():
-        pins[key].value(1 if val else 0)
+# ====== Helpers ======
+def print_status():
+    status_str = " | ".join([f"{k}: {'ON' if v else 'OFF'}" for k, v in device_state.items()])
+    print(f"[STATUS] {status_str}")
 
-def report_status():
-    url = f"{DB_URL}/tenants/{TENANT_ID}/device_states/{DEVICE_ID}.json"
+def handle_state_update(new_state: dict):
+    global device_state
+    for k, v in new_state.items():
+        if k in device_state:
+            device_state[k] = bool(v)
+            pins[k].value(1 if v else 0)  # drive GPIO
+    print("\n[DEVICE] Switch state updated:")
+    print_status()
+
+def fetch_commands():
+    url = f"{DATABASE_URL}/tenants/{TENANT_ID}/device_commands/{DEVICE_ID}/pending.json"
     try:
-        payload = {k: ("ON" if v else "OFF") for k, v in state.items()}
-        payload["lastSeen"] = {".sv": "timestamp"}
-        response = urequests.put(url, json=payload)
-        response.close()
-        print("[HARDWARE] Status reported to RTDB")
+        r = urequests.get(url)
+        if r.status_code == 200 and r.text != "null":
+            commands = ujson.loads(r.text)   # lighter than r.json()
+            if isinstance(commands, dict):
+                for cmd_id, payload in commands.items():
+                    target = payload.get("target")
+                    action = payload.get("action")
+                    if target in pins:
+                        handle_state_update({target: action})
+
+                        # Update state remotely
+                        state_url = f"{DATABASE_URL}/tenants/{TENANT_ID}/device_states/{DEVICE_ID}/switches.json"
+                        resp = urequests.patch(state_url, data=json.dumps({target: action}))
+                        resp.close(); del resp
+
+                        # Acknowledge
+                        ack_url = f"{DATABASE_URL}/tenants/{TENANT_ID}/device_commands/{DEVICE_ID}/pending/{cmd_id}.json"
+                        resp = urequests.delete(ack_url)
+                        resp.close(); del resp
+
+            del commands
+        r.close(); del r
+        gc.collect()
     except Exception as e:
-        print("[ERROR] Failed to report status:", e)
+        print("Error fetching commands:", e)
 
-def check_commands():
-    url = f"{DB_URL}/tenants/{TENANT_ID}/device_commands/{DEVICE_ID}/pending.json"
+def fetch_state():
+    url = f"{DATABASE_URL}/tenants/{TENANT_ID}/device_states/{DEVICE_ID}/switches.json"
     try:
-        response = urequests.get(url)
-        commands = response.json()
-        response.close()
-        
-        if commands:
-            for cmd_id, cmd in commands.items():
-                target = cmd.get("target")
-                action = cmd.get("action")
-                
-                if target in state:
-                    print(f"[HARDWARE] Executing Command: {target} -> {action}")
-                    state[target] = action
-                    update_hardware()
-                    
-                    del_url = f"{DB_URL}/tenants/{TENANT_ID}/device_commands/{DEVICE_ID}/pending/{cmd_id}.json"
-                    urequests.delete(del_url).close()
-            
-            report_status()
-            
+        r = urequests.get(url)
+        if r.status_code == 200 and r.text != "null":
+            state = r.json()
+            if isinstance(state, dict):
+                handle_state_update(state)
+        else:
+            # Initialize default state
+            urequests.put(url, data=json.dumps(device_state))
+            print("[DEVICE] Initialized default state (All OFF).")
+        r.close()
     except Exception as e:
-        pass
+        print("Error fetching state:", e)
 
-def mark_presence():
-    url = f"{DB_URL}/tenants/{TENANT_ID}/presence/{DEVICE_ID}.json"
+def heartbeat():
+    url = f"{DATABASE_URL}/tenants/{TENANT_ID}/presence/{DEVICE_ID}.json"
+    print(f"{DATABASE_URL}/tenants/{TENANT_ID}/presence/{DEVICE_ID}.json")
+    payload = {"online": True, "lastSeen": int(time.time() * 1000)}
     try:
-        urequests.put(url, json={"online": True, "lastSeen": {".sv": "timestamp"}}).close()
-    except:
-        pass
+        urequests.put(url, data=json.dumps(payload))
+    except Exception as e:
+        print("Heartbeat error:", e)
 
-# Main Loop
-print(f"Starting GharSwitch Pico W: {DEVICE_ID}...")
-report_status()
-mark_presence()
+# ====== Main Loop ======
+def main():
+    print("========================================")
+    print("   GharSwitch IoT - Pico W (MicroPy)    ")
+    print("========================================")
+    print(f"Device ID: {DEVICE_ID}")
+    print(f"Tenant ID: {TENANT_ID}")
 
-while True:
-    check_commands()
-    if time.time() % 60 == 0:
-        mark_presence()
-    
-    time.sleep(1)
+    # Initialize state
+    fetch_state()
+
+    while True:
+        fetch_commands()
+        heartbeat()
+        time.sleep(5)  # poll every 5s
+
+main()
+
