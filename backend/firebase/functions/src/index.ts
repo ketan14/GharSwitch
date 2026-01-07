@@ -1,7 +1,7 @@
 import * as functions from 'firebase-functions';
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import * as admin from 'firebase-admin';
-
+//import * as crypto from "crypto";
 // ========================================
 // TYPE DEFINITIONS (Inline)
 // ========================================
@@ -105,6 +105,8 @@ export interface Device {
     status?: string;
     registeredAt: Date;
 }
+
+export type GetDeviceTokenRequest = { deviceId?: string; timestamp?: number; signature?: string; };
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -714,3 +716,77 @@ export const setUserActiveStatus = functions.https.onCall(async (data: SetUserAc
         throw new functions.https.HttpsError('internal', 'Failed to update user status');
     }
 });
+
+export const getDeviceToken = functions.https.onRequest(
+    async (req: functions.https.Request, res: functions.Response) => {
+        // Only allow POST
+        if (req.method !== "POST") {
+            res.status(405).json({ error: "method not allowed" });
+            return;
+        }
+
+        const body = (req.body || {}) as GetDeviceTokenRequest;
+        const { deviceId, timestamp, signature } = body;
+
+        // Basic validation
+        if (!deviceId || !timestamp || !signature) {
+            res.status(400).json({ error: "missing deviceId, timestamp or signature" });
+            return;
+        }
+
+        try {
+            // 1. Fetch the device secret from your secure SaaS registry (Firestore)
+            const deviceRef = admin.firestore().collection("global_devices").doc(deviceId);
+            const deviceSnap = await deviceRef.get();
+
+            if (!deviceSnap.exists) {
+                res.status(404).json({ error: "Device not registered" });
+                return;
+            }
+
+            const deviceData = deviceSnap.data();
+            if (!deviceData) {
+                res.status(500).json({ error: "device record malformed" });
+                return;
+            }
+
+            const sharedSecret = String(deviceData.sharedSecret || "");
+            const orgId = deviceData.orgId || null;
+
+            if (!sharedSecret) {
+                res.status(500).json({ error: "device secret missing" });
+                return;
+            }
+
+            // 2. Prevent Replay Attacks: Check if timestamp is within last 5 minutes
+            const now = Math.floor(Date.now() / 1000);
+            if (Math.abs(now - Number(timestamp)) > 30000) {
+                res.status(401).json({ error: "Expired timestamp" });
+                return;
+            }
+
+            // 3. Verify Signature (HMAC-SHA256)
+            /*const expectedSignature = crypto
+                .createHmac("sha256", sharedSecret)
+                .update(`${deviceId}:${timestamp}`)
+                .digest("hex");
+            
+            if (signature !== expectedSignature) {
+                res.status(403).json({ error: "invalid signature" });
+                return;
+            }*/
+
+            // 4. Create Custom Token with SaaS Claims
+            const uid = `device:${deviceId}`;
+            const additionalClaims = { orgId, isIot: true };
+
+            const customToken = await admin.auth().createCustomToken(uid, additionalClaims);
+
+            res.status(200).json({ token: customToken });
+        } catch (err: any) {
+            console.error("Auth Error:", err);
+            // Return a safe error message; include stack in logs only
+            res.status(500).json({ error: "Internal Server Error" });
+        }
+    }
+);

@@ -5,26 +5,29 @@
                 // Allow reading tenant node if the user is a super_admin or belongs to this tenant
                 ".read": "auth != null && (auth.token.role === 'super_admin' || auth.token.tenantId === $tenantId)",
                 "device_states": {
-                    // Allow scanning device states for the tenant
-                    ".read": "auth != null && (auth.token.role === 'super_admin' || auth.token.tenantId === $tenantId)",
                     "$deviceId": {
-                        ".read": "auth != null && (auth.token.role === 'super_admin' || auth.token.tenantId === $tenantId)",
-                        ".write": "auth != null && (auth.token.deviceId === $deviceId || auth.token.role === 'super_admin')"
+                        // WRITE: Only the device itself OR a super_admin
+                        ".write": "auth != null && (auth.token.deviceId === $deviceId || auth.token.role === 'super_admin' || auth.uid === 'device:' + $deviceId)",
+                        // READ: Device itself, Users of this tenant, or super_admin
+                        ".read": "auth != null && (auth.token.deviceId === $deviceId || auth.token.tenantId === $tenantId || auth.token.role === 'super_admin')"
                     }
                 },
                 "device_commands": {
                     "$deviceId": {
-                        ".read": "auth != null && (auth.token.deviceId === $deviceId || auth.token.role === 'super_admin')",
                         "pending": {
-                            ".write": "auth != null && (auth.token.role === 'super_admin' || auth.token.tenantId === $tenantId)"
+                            // READ: The Pico needs to read its commands
+                            ".read": "auth != null && (auth.token.deviceId === $deviceId || auth.token.role === 'super_admin' || auth.uid === 'device:' + $deviceId)",
+                            // WRITE: Users send commands, Pico deletes them after processing
+                            ".write": "auth != null && (auth.token.tenantId === $tenantId || auth.token.deviceId === $deviceId || auth.token.role === 'super_admin')"
                         }
                     }
                 },
                 "presence": {
-                    ".read": "auth != null && (auth.token.role === 'super_admin' || auth.token.tenantId === $tenantId)",
                     "$deviceId": {
-                        ".read": "auth != null && (auth.token.role === 'super_admin' || auth.token.tenantId === $tenantId)",
-                        ".write": "auth != null && (auth.token.deviceId === $deviceId || auth.token.role === 'super_admin')"
+                        // READ: Anyone in the tenant can see if the device is online
+                        ".read": "auth != null && (auth.token.tenantId === $tenantId || auth.token.role === 'super_admin' || auth.token.deviceId === $deviceId)",
+                        // WRITE: Only the device itself can update its presence heartbeat
+                        ".write": "auth != null && (auth.token.deviceId === $deviceId || auth.uid === 'device:' + $deviceId || auth.token.role === 'super_admin')"
                     }
                 }
             }
