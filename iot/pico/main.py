@@ -201,6 +201,9 @@ def execute_single_command(cmd_id, body):
             ack_url = f"{DATABASE_URL}/tenants/{TENANT_ID}/device_commands/{DEVICE_ID}/pending/{cmd_id}.json?auth={ID_TOKEN}"
             urequests.delete(ack_url).close()
             print(f"[OK] Command {cmd_id} cleared.")
+            
+            # 3. Update Presence (We are active!)
+            heartbeat()
         except:
             print("[ERR] Failed to acknowledge command.")
 

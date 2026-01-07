@@ -3,15 +3,15 @@ import { useDevices } from '../hooks/useDevices';
 import DeviceCard from './DeviceCard';
 
 export default function DeviceList() {
-    const { devices, loading, error } = useDevices();
+  const { devices, loading, error } = useDevices();
 
-    if (loading) {
-        return (
-            <div className="loading-container">
-                <div className="spinner"></div>
-                <p>Loading devices...</p>
+  if (loading) {
+    return (
+      <div className="loading-container">
+        <div className="spinner"></div>
+        <p>Loading devices...</p>
 
-                <style jsx>{`
+        <style jsx>{`
           .loading-container {
             display: flex;
             flex-direction: column;
@@ -36,16 +36,16 @@ export default function DeviceList() {
             100% { transform: rotate(360deg); }
           }
         `}</style>
-            </div>
-        );
-    }
+      </div>
+    );
+  }
 
-    if (error) {
-        return (
-            <div className="error-container">
-                <p>Error loading devices: {error.message}</p>
+  if (error) {
+    return (
+      <div className="error-container">
+        <p>Error loading devices: {error.message}</p>
 
-                <style jsx>{`
+        <style jsx>{`
           .error-container {
             padding: 20px;
             background: #ffebee;
@@ -53,17 +53,17 @@ export default function DeviceList() {
             color: #c62828;
           }
         `}</style>
-            </div>
-        );
-    }
+      </div>
+    );
+  }
 
-    if (devices.length === 0) {
-        return (
-            <div className="empty-state">
-                <h3>No Devices Found</h3>
-                <p>Register your first device to get started.</p>
+  if (devices.length === 0) {
+    return (
+      <div className="empty-state">
+        <h3>No Devices Found</h3>
+        <p>Register your first device to get started.</p>
 
-                <style jsx>{`
+        <style jsx>{`
           .empty-state {
             text-align: center;
             padding: 60px 20px;
@@ -75,27 +75,27 @@ export default function DeviceList() {
             color: #333;
           }
         `}</style>
-            </div>
-        );
-    }
+      </div>
+    );
+  }
 
-    return (
-        <div className="device-list">
-            <h2>My Devices ({devices.length})</h2>
+  return (
+    <div className="device-list">
+      <h2>My Devices ({devices.length})</h2>
 
-            <div className="devices-grid">
-                {devices.map((device) => (
-                    <DeviceCard
-                        key={device.id}
-                        deviceId={device.id}
-                        deviceName={device.name}
-                        deviceType={device.type}
-                        status={device.status}
-                    />
-                ))}
-            </div>
+      <div className="devices-grid">
+        {devices.map((device) => (
+          <DeviceCard
+            key={device.id}
+            deviceId={device.id}
+            deviceName={device.name}
+            deviceType={device.type}
+            status={device.status as 'ONLINE' | 'OFFLINE' | undefined}
+          />
+        ))}
+      </div>
 
-            <style jsx>{`
+      <style jsx>{`
         .device-list {
           padding: 20px;
         }
@@ -118,6 +118,6 @@ export default function DeviceList() {
           }
         }
       `}</style>
-        </div>
-    );
+    </div>
+  );
 }

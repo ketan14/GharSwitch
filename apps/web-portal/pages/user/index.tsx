@@ -5,16 +5,16 @@ import DeviceCard from '../../components/DeviceCard';
 import { useRouter } from 'next/router';
 
 export default function UserDashboard() {
-    const { user, role, loading, signOut } = useAuth();
-    const { devices, loading: devicesLoading } = useDevices();
-    const router = useRouter();
+  const { user, role, loading, signOut } = useAuth();
+  const { devices, loading: devicesLoading } = useDevices();
+  const router = useRouter();
 
-    if (loading) {
-        return (
-            <div className="loading-screen">
-                <div className="spinner"></div>
-                <p>Loading your dashboard...</p>
-                <style jsx>{`
+  if (loading) {
+    return (
+      <div className="loading-screen">
+        <div className="spinner"></div>
+        <p>Loading your dashboard...</p>
+        <style jsx>{`
           .loading-screen {
             display: flex;
             flex-direction: column;
@@ -37,58 +37,58 @@ export default function UserDashboard() {
             100% { transform: rotate(360deg); }
           }
         `}</style>
-            </div>
-        );
-    }
+      </div>
+    );
+  }
 
-    if (!user) {
-        router.push('/login');
-        return null;
-    }
+  if (!user) {
+    router.push('/login');
+    return null;
+  }
 
-    return (
-        <div className="dashboard-page">
-            <header className="header">
-                <div className="header-content">
-                    <h1>GharSwitch Pro</h1>
-                    <div className="user-info">
-                        <span className="user-email">{user.email}</span>
-                        <span className={`role-badge ${role?.toLowerCase()}`}>{role?.replace('_', ' ')}</span>
-                        <button onClick={signOut} className="logout-btn">Logout</button>
-                    </div>
-                </div>
-            </header>
+  return (
+    <div className="dashboard-page">
+      <header className="header">
+        <div className="header-content">
+          <h1>GharSwitch Pro</h1>
+          <div className="user-info">
+            <span className="user-email">{user.email}</span>
+            <span className={`role-badge ${role?.toLowerCase()}`}>{role?.replace('_', ' ')}</span>
+            <button onClick={signOut} className="logout-btn">Logout</button>
+          </div>
+        </div>
+      </header>
 
-            <main className="main-content">
-                <header className="page-header">
-                    <h2>Your Devices</h2>
-                    <p>Control your switches in real-time</p>
-                </header>
+      <main className="main-content">
+        <header className="page-header">
+          <h2>Your Devices</h2>
+          <p>Control your switches in real-time</p>
+        </header>
 
-                {devicesLoading ? (
-                    <div className="loading-state">Fetching devices...</div>
-                ) : devices.length === 0 ? (
-                    <div className="empty-state">
-                        <div className="empty-icon">🔌</div>
-                        <h3>No devices found</h3>
-                        <p>Once your administrator registers a device, it will appear here.</p>
-                    </div>
-                ) : (
-                    <div className="device-grid">
-                        {devices.map((device) => (
-                            <DeviceCard
-                                key={device.id}
-                                deviceId={device.id}
-                                deviceName={device.name}
-                                deviceType={device.type}
-                                status={device.status}
-                            />
-                        ))}
-                    </div>
-                )}
-            </main>
+        {devicesLoading ? (
+          <div className="loading-state">Fetching devices...</div>
+        ) : devices.length === 0 ? (
+          <div className="empty-state">
+            <div className="empty-icon">🔌</div>
+            <h3>No devices found</h3>
+            <p>Once your administrator registers a device, it will appear here.</p>
+          </div>
+        ) : (
+          <div className="device-grid">
+            {devices.map((device) => (
+              <DeviceCard
+                key={device.id}
+                deviceId={device.id}
+                deviceName={device.name}
+                deviceType={device.type}
+                status={device.status as 'ONLINE' | 'OFFLINE' | undefined}
+              />
+            ))}
+          </div>
+        )}
+      </main>
 
-            <style jsx>{`
+      <style jsx>{`
         .dashboard-page {
           min-height: 100vh;
           background: #f8f9fa;
@@ -232,6 +232,6 @@ export default function UserDashboard() {
           color: #6c757d;
         }
       `}</style>
-        </div>
-    );
+    </div>
+  );
 }

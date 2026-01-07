@@ -28,19 +28,24 @@ export default function DeviceCard({ deviceId, deviceName, deviceType, status }:
     pending: pendingSwitches
   });
 
-  const [loadingTarget, setLoadingTarget] = React.useState<string | null>(null);
+  // Track local loading state for EACH switch independently
+  const [localLoading, setLocalLoading] = React.useState<Record<string, boolean>>({});
 
   const handleToggle = async (target: SwitchTarget, currentState: boolean) => {
     if (!canControl) return;
 
-    setLoadingTarget(target);
+    setLocalLoading(prev => ({ ...prev, [target]: true }));
     try {
       await sendCommand(deviceId, target, !currentState);
     } catch (error) {
       console.error('Failed to send command:', error);
       alert('Failed to toggle switch. Please try again.');
     } finally {
-      setLoadingTarget(null);
+      setLocalLoading(prev => {
+        const next = { ...prev };
+        delete next[target];
+        return next;
+      });
     }
   };
 
@@ -65,7 +70,7 @@ export default function DeviceCard({ deviceId, deviceName, deviceType, status }:
           // pendingAction is boolean (true=ON, false=OFF) if pending, or undefined
           const pendingAction = pendingSwitches?.[switchId];
           const isActuallyPending = pendingAction !== undefined;
-          const isLoading = loadingTarget === switchId;
+          const isLoading = localLoading[switchId];
           const isBusy = isActuallyPending || isLoading;
 
           // Robust Status Text Logic
@@ -83,7 +88,7 @@ export default function DeviceCard({ deviceId, deviceName, deviceType, status }:
               <button
                 className={`switch-button ${switchState ? 'on' : 'off'} ${isBusy ? 'pending' : ''}`}
                 onClick={() => handleToggle(switchId, switchState)}
-                disabled={!canControl || isLoading || stateLoading || isOffline || isBusy}
+                disabled={!canControl || isLoading || stateLoading || isBusy}
               >
                 {statusText}
               </button>

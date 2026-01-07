@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { ref, onValue, off } from 'firebase/database';
 import { rtdb } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
@@ -28,6 +28,34 @@ export function useDeviceState(deviceId: string | null) {
     // Map pending commands to switch target states (true=ON, false=OFF)
     const [pendingSwitches, setPendingSwitches] = useState<Record<string, boolean>>({});
 
+    // Store raw Firebase data to re-process for timeouts
+    const rawCmdsRef = useRef<any>(null);
+
+    // Helper to recalculate pending state based on timeout
+    const recalcPending = useCallback(() => {
+        const data = rawCmdsRef.current;
+        if (!data) {
+            setPendingSwitches({});
+            return;
+        }
+
+        const busymap: Record<string, boolean> = {};
+        const now = Date.now();
+        const TIMEOUT_MS = 15000; // 15 Seconds UI Timeout
+
+        Object.values(data).forEach((cmd: any) => {
+            // Filter out stale commands
+            if (cmd.timestamp && (now - cmd.timestamp > TIMEOUT_MS)) {
+                return; // Ignored (Visual Timeout)
+            }
+
+            if (cmd.target && typeof cmd.action === 'boolean') {
+                busymap[cmd.target] = cmd.action;
+            }
+        });
+        setPendingSwitches(busymap);
+    }, []);
+
     useEffect(() => {
         if (!tenantId || !deviceId) return;
 
@@ -46,27 +74,19 @@ export function useDeviceState(deviceId: string | null) {
         const cmdRef = ref(rtdb, cmdPath);
 
         const cmdUnsub = onValue(cmdRef, (snapshot) => {
-            const data = snapshot.val();
-            if (!data) {
-                setPendingSwitches({});
-                return;
-            }
-
-            // Map pending commands to switches + target state
-            const busymap: Record<string, boolean> = {};
-            Object.values(data).forEach((cmd: any) => {
-                if (cmd.target && typeof cmd.action === 'boolean') {
-                    busymap[cmd.target] = cmd.action;
-                }
-            });
-            setPendingSwitches(busymap);
+            rawCmdsRef.current = snapshot.val();
+            recalcPending(); // Update immediately on new data
         });
+
+        // 3. Interval Timer to clean up stale spinners
+        const intervalId = setInterval(recalcPending, 1000);
 
         return () => {
             off(stateRef, 'value', stateUnsub);
             off(cmdRef, 'value', cmdUnsub);
+            clearInterval(intervalId);
         };
-    }, [tenantId, deviceId]);
+    }, [tenantId, deviceId, recalcPending]);
 
     return { state, loading, pendingSwitches };
 }

@@ -18,6 +18,9 @@ export function useDevices() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<Error | null>(null);
 
+    const [presence, setPresence] = useState<Record<string, any>>({});
+
+    // 1. Fetch Devices Metadata from Firestore
     useEffect(() => {
         if (!tenantId) {
             setDevices([]);
@@ -51,5 +54,42 @@ export function useDevices() {
         return () => unsubscribe();
     }, [tenantId]);
 
-    return { devices, loading, error };
+    // 2. Listen to RTDB Presence for Live Status
+    useEffect(() => {
+        if (!tenantId) return;
+
+        const { ref, onValue, off } = require('firebase/database'); // Lazy load/require to match existing style or import above
+        const { rtdb } = require('../lib/firebase');
+
+        const presenceRef = ref(rtdb, `tenants/${tenantId}/presence`);
+
+        const unsub = onValue(presenceRef, (snapshot: any) => {
+            setPresence(snapshot.val() || {});
+        });
+
+        return () => off(presenceRef, 'value', unsub);
+    }, [tenantId]);
+
+    // 3. Merge Data (Calculate Online/Offline based on Heartbeat)
+    const combinedDevices = devices.map(device => {
+        const devicePresence = presence[device.id];
+        let isOnline = false;
+
+        if (devicePresence && devicePresence.lastSeen) {
+            const now = Date.now();
+            const lastSeen = devicePresence.lastSeen;
+            // 12 Minute Grace Period (Heartbeat is 10m)
+            const THRESHOLD = 12 * 60 * 1000;
+            if (now - lastSeen < THRESHOLD) {
+                isOnline = true;
+            }
+        }
+
+        return {
+            ...device,
+            status: isOnline ? 'ONLINE' : 'OFFLINE'
+        };
+    });
+
+    return { devices: combinedDevices, loading, error };
 }
