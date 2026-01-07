@@ -22,6 +22,9 @@ def connect_wifi():
     if wlan.isconnected():
         print('WiFi Connected!')
         print('IP Address:', wlan.ifconfig()[0])
+        # Disable Power Saving Mode for lower latency (consumes more power)
+        wlan.config(pm=0xa11140) 
+        print('WiFi Power Management: DISABLED (High Performance)')
     else:
         print('WiFi Connection Failed!')
 

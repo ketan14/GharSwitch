@@ -725,12 +725,12 @@ export const getDeviceToken = functions.https.onRequest(
             return;
         }
 
-        const body = (req.body || {}) as GetDeviceTokenRequest;
-        const { deviceId, timestamp, signature } = body;
+        const body = (req.body || {}) as any;
+        const { deviceId, deviceSecret } = body;
 
         // Basic validation
-        if (!deviceId || !timestamp || !signature) {
-            res.status(400).json({ error: "missing deviceId, timestamp or signature" });
+        if (!deviceId || !deviceSecret) {
+            res.status(400).json({ error: "missing deviceId or deviceSecret" });
             return;
         }
 
@@ -750,42 +750,30 @@ export const getDeviceToken = functions.https.onRequest(
                 return;
             }
 
-            const sharedSecret = String(deviceData.sharedSecret || "");
+            // In production, compare hashes. For now, direct string match.
+            const storedSecret = String(deviceData.sharedSecret || "");
             const orgId = deviceData.orgId || null;
 
-            if (!sharedSecret) {
-                res.status(500).json({ error: "device secret missing" });
+            if (!storedSecret) {
+                res.status(500).json({ error: "device sharedSecret not configured on server" });
                 return;
             }
 
-            // 2. Prevent Replay Attacks: Check if timestamp is within last 5 minutes
-            const now = Math.floor(Date.now() / 1000);
-            if (Math.abs(now - Number(timestamp)) > 30000) {
-                res.status(401).json({ error: "Expired timestamp" });
+            if (deviceSecret !== storedSecret) {
+                res.status(401).json({ error: "Invalid Secret" });
                 return;
             }
 
-            // 3. Verify Signature (HMAC-SHA256)
-            /*const expectedSignature = crypto
-                .createHmac("sha256", sharedSecret)
-                .update(`${deviceId}:${timestamp}`)
-                .digest("hex");
-            
-            if (signature !== expectedSignature) {
-                res.status(403).json({ error: "invalid signature" });
-                return;
-            }*/
-
-            // 4. Create Custom Token with SaaS Claims
+            // 2. Create Custom Token with SaaS Claims
+            // The UID 'device:<deviceId>' matches the RTDB rules
             const uid = `device:${deviceId}`;
-            const additionalClaims = { orgId, isIot: true };
+            const additionalClaims = { orgId, isIot: true, deviceId };
 
             const customToken = await admin.auth().createCustomToken(uid, additionalClaims);
 
             res.status(200).json({ token: customToken });
         } catch (err: any) {
             console.error("Auth Error:", err);
-            // Return a safe error message; include stack in logs only
             res.status(500).json({ error: "Internal Server Error" });
         }
     }

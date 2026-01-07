@@ -11,7 +11,7 @@ interface DeviceCardProps {
 }
 
 export default function DeviceCard({ deviceId, deviceName, deviceType, status }: DeviceCardProps) {
-  const { state, loading: stateLoading } = useDeviceState(deviceId);
+  const { state, loading: stateLoading, pendingSwitches } = useDeviceState(deviceId);
   const { sendCommand, loading: commandLoading } = useSendCommand();
   const { role } = useAuth();
   // Normalize role for comparison (handles 'ADMIN' or 'tenant-admin')
@@ -24,17 +24,23 @@ export default function DeviceCard({ deviceId, deviceName, deviceType, status }:
     stateLoading,
     role,
     normalizedRole,
-    stateExists: !!state
+    stateExists: !!state,
+    pending: pendingSwitches
   });
+
+  const [loadingTarget, setLoadingTarget] = React.useState<string | null>(null);
 
   const handleToggle = async (target: SwitchTarget, currentState: boolean) => {
     if (!canControl) return;
 
+    setLoadingTarget(target);
     try {
       await sendCommand(deviceId, target, !currentState);
     } catch (error) {
       console.error('Failed to send command:', error);
       alert('Failed to toggle switch. Please try again.');
+    } finally {
+      setLoadingTarget(null);
     }
   };
 
@@ -56,16 +62,30 @@ export default function DeviceCard({ deviceId, deviceName, deviceType, status }:
       <div className="switches-grid">
         {switches.map((switchId, index) => {
           const switchState = state?.switches?.[switchId] ?? false;
+          // pendingAction is boolean (true=ON, false=OFF) if pending, or undefined
+          const pendingAction = pendingSwitches?.[switchId];
+          const isActuallyPending = pendingAction !== undefined;
+          const isLoading = loadingTarget === switchId;
+          const isBusy = isActuallyPending || isLoading;
+
+          // Robust Status Text Logic
+          let statusText = switchState ? 'ON' : 'OFF';
+          if (isActuallyPending) {
+            statusText = pendingAction ? 'Turning On...' : 'Turning Off...';
+          } else if (isLoading) {
+            // Fallback to local intent if Firebase hasn't synced yet
+            statusText = !switchState ? 'Turning On...' : 'Turning Off...';
+          }
 
           return (
             <div key={switchId} className="switch-container">
               <label className="switch-label">Switch {index + 1}</label>
               <button
-                className={`switch-button ${switchState ? 'on' : 'off'}`}
+                className={`switch-button ${switchState ? 'on' : 'off'} ${isBusy ? 'pending' : ''}`}
                 onClick={() => handleToggle(switchId, switchState)}
-                disabled={!canControl || commandLoading || stateLoading || isOffline}
+                disabled={!canControl || isLoading || stateLoading || isOffline || isBusy}
               >
-                {switchState ? 'ON' : 'OFF'}
+                {statusText}
               </button>
             </div>
           );

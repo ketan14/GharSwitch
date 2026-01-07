@@ -25,50 +25,48 @@ export function useDeviceState(deviceId: string | null) {
     const [state, setState] = useState<DeviceState | null>(null);
     const [loading, setLoading] = useState(true);
 
+    // Map pending commands to switch target states (true=ON, false=OFF)
+    const [pendingSwitches, setPendingSwitches] = useState<Record<string, boolean>>({});
+
     useEffect(() => {
-        if (!tenantId || !deviceId) {
-            setState(null);
+        if (!tenantId || !deviceId) return;
+
+        // 1. Listen for State
+        const statePath = `tenants/${tenantId}/device_states/${deviceId}`;
+        const stateRef = ref(rtdb, statePath);
+
+        const stateUnsub = onValue(stateRef, (snapshot) => {
+            const data = snapshot.val();
+            if (data) setState(data as DeviceState);
             setLoading(false);
-            return;
-        }
-        const path = `tenants/${tenantId}/device_states/${deviceId}`;
-        console.log(`[useDeviceState] 🔌 Connecting to: ${path}`);
-        const stateRef = ref(rtdb, path);
+        });
 
-        // Fail-safe: Force loading to false if Firebase doesn't respond in 5s
-        const timeout = setTimeout(() => {
-            if (loading) {
-                console.warn(`[useDeviceState] ⏳ Timeout waiting for ${deviceId} state. Forcing load.`);
-                setLoading(false);
+        // 2. Listen for Pending Commands
+        const cmdPath = `tenants/${tenantId}/device_commands/${deviceId}/pending`;
+        const cmdRef = ref(rtdb, cmdPath);
+
+        const cmdUnsub = onValue(cmdRef, (snapshot) => {
+            const data = snapshot.val();
+            if (!data) {
+                setPendingSwitches({});
+                return;
             }
-        }, 5000);
 
-        const unsubscribe = onValue(
-            stateRef,
-            (snapshot) => {
-                clearTimeout(timeout);
-                const data = snapshot.val();
-                console.log(`[useDeviceState] ✅ Received for ${deviceId}:`, data);
-                if (data) {
-                    setState(data as DeviceState);
-                } else {
-                    console.log(`[useDeviceState] ℹ️ Path exists but is empty for ${deviceId}`);
-                    setState(null);
+            // Map pending commands to switches + target state
+            const busymap: Record<string, boolean> = {};
+            Object.values(data).forEach((cmd: any) => {
+                if (cmd.target && typeof cmd.action === 'boolean') {
+                    busymap[cmd.target] = cmd.action;
                 }
-                setLoading(false);
-            },
-            (error) => {
-                clearTimeout(timeout);
-                console.error(`[useDeviceState] ❌ Error for ${deviceId}:`, error);
-                setLoading(false);
-            }
-        );
+            });
+            setPendingSwitches(busymap);
+        });
 
         return () => {
-            clearTimeout(timeout);
-            off(stateRef, 'value', unsubscribe);
+            off(stateRef, 'value', stateUnsub);
+            off(cmdRef, 'value', cmdUnsub);
         };
     }, [tenantId, deviceId]);
 
-    return { state, loading };
+    return { state, loading, pendingSwitches };
 }

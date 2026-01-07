@@ -57,3 +57,48 @@ Detailed documentation is available in the `brain/` directory:
 
 ---
 Developed for high-security IoT environments. 🛡️ 💡
+
+
+## 🔐 Device Security & Configuration
+
+### Managing Device Secrets
+GharSwitch uses a secure "Device Secret" authentication flow. To register a device's secret in the cloud, use the built-in tool:
+
+```bash
+# Run from the root directory
+npm run set-device-secret -w tools -- <DEVICE_ID> <YOUR_SECRET_PASSWORD>
+
+# Example:
+npm run set-device-secret -w tools -- PICO_001 my-secure-password-123
+```
+*Note: This command updates the secure `global_devices` registry in Firestore.*
+
+### Configuring the Pico W
+Update your `iot/pico/config.py` with the following credentials to enable secure connection:
+
+```python
+# iot/pico/config.py
+
+# === Network ===
+WIFI_SSID = "Your_WiFi_Name"
+WIFI_PASS = "Your_WiFi_Password"
+
+# === Firebase ===
+DB_URL = "https://your-project.firebaseio.com"
+TENANT_ID = "your-tenant-id"
+DEVICE_ID = "PICO_001"  # Must match the ID used in the tool above
+
+# === Security ===
+# 1. The URL of your deployed Cloud Function
+AUTH_URL = "https://us-central1-your-project.cloudfunctions.net/getDeviceToken"
+
+# 2. Your Web API Key (Project Settings -> General)
+API_KEY = "AIzaSy..." 
+
+# 3. The secret password you set using the tool above
+DEVICE_SECRET = "my-secure-password-123" 
+```
+
+---
+Developed for high-security IoT environments. 🛡️ 💡
+

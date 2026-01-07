@@ -12,6 +12,7 @@
     "scripts": {
         "build": "tsc",
         "create-super-admin": "node dist/create-super-admin.js",
-        "seed-devices": "node dist/seed-global-devices.js"
+        "seed-devices": "node dist/seed-global-devices.js",
+        "set-device-secret": "ts-node set-device-secret.ts"
     }
 }

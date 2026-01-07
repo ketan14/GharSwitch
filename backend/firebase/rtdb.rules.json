@@ -18,7 +18,7 @@
                             // READ: The Pico needs to read its commands
                             ".read": "auth != null && (auth.token.deviceId === $deviceId || auth.token.role === 'super_admin' || auth.uid === 'device:' + $deviceId)",
                             // WRITE: Users send commands, Pico deletes them after processing
-                            ".write": "auth != null && (auth.token.tenantId === $tenantId || auth.token.deviceId === $deviceId || auth.token.role === 'super_admin')"
+                            ".write": "auth != null && (auth.token.tenantId === $tenantId || auth.token.deviceId === $deviceId || auth.token.role === 'super_admin' || auth.uid === 'device:' + $deviceId)"
                         }
                     }
                 },
