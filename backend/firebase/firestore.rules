@@ -66,8 +66,15 @@ service cloud.firestore {
       // ========================================
       
       match /devices/{deviceId} {
-        allow read: if isAuthenticated() && getTenantId() == tenantId;
-        // tenant_admin, admin, and user can update device config
+        // STRICT READ ACCESS:
+        // 1. Admins (Tenant, Super, or Standard Admin) can read ALL devices.
+        // 2. Standard Users can ONLY read devices they are assigned to.
+        allow read: if isAuthenticated() && getTenantId() == tenantId && (
+          getRole(tenantId) in ['tenant_admin', 'super_admin', 'admin'] ||
+          request.auth.uid in resource.data.assignedUsers
+        );
+        
+        // tenant_admin, admin, and user can update device config (Admins general, Users specific)
         allow update: if isAuthenticated() && getTenantId() == tenantId 
                       && getRole(tenantId) in ['tenant_admin', 'admin', 'user', 'super_admin'];
         // Device registration/deletion MUST go through Cloud Functions

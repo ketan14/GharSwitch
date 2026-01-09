@@ -2,15 +2,17 @@ import React from 'react';
 import { useDeviceState } from '../hooks/useDeviceState';
 import { useSendCommand, SwitchTarget } from '../hooks/useSendCommand';
 import { useAuth } from '../context/AuthContext';
+import DeviceAccessControl from './DeviceAccessControl';
 
 interface DeviceCardProps {
   deviceId: string;
   deviceName: string;
   deviceType: string;
   status?: 'ONLINE' | 'OFFLINE';
+  assignedUsers?: string[];
 }
 
-export default function DeviceCard({ deviceId, deviceName, deviceType, status }: DeviceCardProps) {
+export default function DeviceCard({ deviceId, deviceName, deviceType, status, assignedUsers }: DeviceCardProps) {
   const { state, loading: stateLoading, pendingSwitches } = useDeviceState(deviceId);
   const { sendCommand, loading: commandLoading } = useSendCommand();
   const { role } = useAuth();
@@ -18,18 +20,11 @@ export default function DeviceCard({ deviceId, deviceName, deviceType, status }:
   const normalizedRole = role?.toLowerCase().replace('-', '_');
   const canControl = ['super_admin', 'tenant_admin', 'admin', 'user'].includes(normalizedRole || '');
 
-  console.log(`DeviceCard [${deviceId}] Debug:`, {
-    canControl,
-    commandLoading,
-    stateLoading,
-    role,
-    normalizedRole,
-    stateExists: !!state,
-    pending: pendingSwitches
-  });
-
   // Track local loading state for EACH switch independently
   const [localLoading, setLocalLoading] = React.useState<Record<string, boolean>>({});
+  const [showAccess, setShowAccess] = React.useState(false);
+
+  const isAdmin = ['super_admin', 'tenant_admin', 'admin'].includes(normalizedRole || '');
 
   const handleToggle = async (target: SwitchTarget, currentState: boolean) => {
     if (!canControl) return;
@@ -97,6 +92,27 @@ export default function DeviceCard({ deviceId, deviceName, deviceType, status }:
         })}
       </div>
 
+      {isAdmin && (
+        <div className="admin-actions">
+          <button
+            className={`btn-access ${showAccess ? 'active' : ''}`}
+            onClick={() => setShowAccess(!showAccess)}
+          >
+            {showAccess ? 'Close Access Control' : 'Manage Device Access'}
+          </button>
+
+          {showAccess && (
+            <div className="access-panel">
+              <DeviceAccessControl
+                deviceId={deviceId}
+                deviceName={deviceName}
+                assignedUsers={assignedUsers}
+              />
+            </div>
+          )}
+        </div>
+      )}
+
       {(state?.diagnostics || !canControl || stateLoading || isOffline) && (
         <div className="diagnostics">
           {isOffline && <div style={{ color: '#d32f2f', fontWeight: 600 }}>Device is Offline</div>}
@@ -155,6 +171,40 @@ export default function DeviceCard({ deviceId, deviceName, deviceType, status }:
           color: #666;
           font-size: 14px;
           margin-bottom: 16px;
+        }
+
+        .admin-actions {
+          margin-top: 16px;
+          padding-top: 16px;
+          border-top: 1px solid #f1f5f9;
+        }
+
+        .btn-access {
+          width: 100%;
+          padding: 10px;
+          background: #f8fafc;
+          border: 1px solid #e2e8f0;
+          border-radius: 6px;
+          font-size: 13px;
+          font-weight: 600;
+          color: #475569;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+
+        .btn-access:hover {
+          background: #f1f5f9;
+          color: #1e293b;
+        }
+
+        .btn-access.active {
+          background: #ef4444;
+          color: white;
+          border-color: #ef4444;
+        }
+
+        .access-panel {
+          margin-top: 12px;
         }
 
         .switches-grid {

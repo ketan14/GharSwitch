@@ -102,6 +102,7 @@ export interface Device {
     type: string;
     metadata: any;
     config: any;
+    assignedUsers?: string[];
     status?: string;
     registeredAt: Date;
 }
@@ -241,8 +242,20 @@ export const sendCommand = onCall({ cors: true }, async (request) => {
             throw new HttpsError('not-found', 'Device not registered to this tenant');
         }
 
-        if (deviceDoc.data()?.active === false) {
+        const deviceData = deviceDoc.data();
+        if (deviceData?.active === false) {
             throw new HttpsError('permission-denied', 'Device is globally deactivated');
+        }
+
+        // 4.5. STRICT ISOLATION ENFORCEMENT
+        // If caller is a standard USER (not an admin of any kind), they MUST be assigned.
+        const isAdmin = ['super_admin', 'tenant_admin', 'admin'].includes(memberRole);
+
+        if (!isAdmin) {
+            const assignedUsers = (deviceData?.assignedUsers || []) as string[];
+            if (!assignedUsers.includes(caller.uid)) {
+                throw new HttpsError('permission-denied', 'You do not have permission to control this specific device');
+            }
         }
 
         // 5. Execution (RTDB Write)
@@ -426,7 +439,7 @@ export const registerDevice = functions.https.onCall(async (data: RegisterDevice
     const role = context.auth.token.role as string;
     const { deviceId, claimCode } = data;
 
-    if (role !== 'tenant_admin' && role !== 'super_admin') {
+    if (role !== 'tenant_admin' && role !== 'super_admin' && role !== 'admin') {
         throw new functions.https.HttpsError('permission-denied', 'Only admins can register devices');
     }
 
@@ -498,7 +511,8 @@ export const inviteUser = functions.https.onCall(async (data: InviteUserRequest,
     const { email, password, role } = data;
 
     // 0. Authorization: Only admins can invite users
-    if (callerRole !== 'tenant_admin' && callerRole !== 'super_admin') {
+    // 0. Authorization: Tenant Admins AND standard Admins can invite users
+    if (callerRole !== 'tenant_admin' && callerRole !== 'super_admin' && callerRole !== 'admin') {
         throw new functions.https.HttpsError('permission-denied', 'Only admins can invite members');
     }
 
@@ -596,6 +610,169 @@ export const setTenantClaim = functions.firestore.document('tenants/{tenantId}/m
 // ========================================
 // 7. MANAGE DEVICE TYPE (Super Admin Only)
 // ========================================
+// ========================================
+// 7. ASSIGN DEVICE TO USER (Tenant Admin/Admin)
+// ========================================
+export const assignDeviceToUser = functions.https.onCall(async (data: { deviceId: string, userId: string, access: boolean }, context) => {
+    if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'Login required');
+
+    const tenantId = context.auth.token.tenantId as string;
+    const role = context.auth.token.role as string;
+    const { deviceId, userId, access } = data;
+
+    // 1. Authorization
+    if (role !== 'tenant_admin' && role !== 'super_admin' && role !== 'admin') {
+        throw new functions.https.HttpsError('permission-denied', 'Only admins can assign devices');
+    }
+
+    if (!tenantId || !deviceId || !userId) {
+        throw new functions.https.HttpsError('invalid-argument', 'Missing required fields');
+    }
+
+    try {
+        await db.runTransaction(async (tx) => {
+            const deviceRef = db.collection('tenants').doc(tenantId).collection('devices').doc(deviceId);
+            const mappingRef = db.collection('tenants').doc(tenantId).collection('device_users').doc(`${deviceId}_${userId}`);
+
+            const deviceSnap = await tx.get(deviceRef);
+            if (!deviceSnap.exists) throw new functions.https.HttpsError('not-found', 'Device not found');
+
+            // 2. Dual Write: Logic & Indexing
+            if (access) {
+                // Grant Access
+                tx.update(deviceRef, {
+                    assignedUsers: admin.firestore.FieldValue.arrayUnion(userId)
+                });
+                tx.set(mappingRef, {
+                    tenantId, deviceId, userId,
+                    assignedAt: admin.firestore.FieldValue.serverTimestamp()
+                });
+            } else {
+                // Revoke Access
+                tx.update(deviceRef, {
+                    assignedUsers: admin.firestore.FieldValue.arrayRemove(userId)
+                });
+                tx.delete(mappingRef);
+            }
+        });
+
+        // Log Audit (outside transaction)
+        await logAuditAction(context, access ? 'ASSIGN_DEVICE' : 'REVOKE_DEVICE', deviceId, { userId });
+
+        return { success: true };
+    } catch (error: any) {
+        console.error('Error assigning device:', error);
+        throw new functions.https.HttpsError('internal', 'Failed to update assignment');
+    }
+});
+
+// ========================================
+// 7.5. ASSIGN USER TO GROUP (Group-Based Access)
+// ========================================
+export const assignUserToGroup = functions.https.onCall(async (data: { groupId: string, userId: string, access: boolean }, context) => {
+    if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'Login required');
+
+    const tenantId = context.auth.token.tenantId as string;
+    const role = context.auth.token.role as string;
+    const { groupId, userId, access } = data;
+
+    // 1. Authorization
+    if (role !== 'tenant_admin' && role !== 'super_admin' && role !== 'admin') {
+        throw new functions.https.HttpsError('permission-denied', 'Only admins can assign groups');
+    }
+
+    if (!tenantId || !groupId || !userId) {
+        throw new functions.https.HttpsError('invalid-argument', 'Missing required fields');
+    }
+
+    try {
+        await db.runTransaction(async (tx) => {
+            const groupRef = db.collection('tenants').doc(tenantId).collection('groups').doc(groupId);
+            const groupSnap = await tx.get(groupRef);
+
+            if (!groupSnap.exists) {
+                throw new functions.https.HttpsError('not-found', 'Group not found');
+            }
+
+            const groupData = groupSnap.data();
+            const deviceIds = (groupData?.deviceIds || []) as string[];
+
+            // 2. Update Group Membership (Logical Layer)
+            if (access) {
+                tx.update(groupRef, { members: admin.firestore.FieldValue.arrayUnion(userId) });
+            } else {
+                tx.update(groupRef, { members: admin.firestore.FieldValue.arrayRemove(userId) });
+            }
+
+            // 3. Cascade to Devices (Physical Layer)
+            // Note: In an ideal world with >500 devices, this should be a background trigger.
+            // For typical smart homes (10-50 devices), loop in transaction is fine.
+            for (const deviceId of deviceIds) {
+                const deviceRef = db.collection('tenants').doc(tenantId).collection('devices').doc(deviceId);
+                const mappingRef = db.collection('tenants').doc(tenantId).collection('device_users').doc(`${deviceId}_${userId}`);
+
+                if (access) {
+                    tx.update(deviceRef, { assignedUsers: admin.firestore.FieldValue.arrayUnion(userId) });
+                    tx.set(mappingRef, { tenantId, deviceId, userId, assignedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+                } else {
+                    tx.update(deviceRef, { assignedUsers: admin.firestore.FieldValue.arrayRemove(userId) });
+                    // We don't strictly delete mappingRef here to keep history, or we can delete.
+                    // Let's delete to keep clean.
+                    tx.delete(mappingRef);
+                }
+            }
+        });
+
+        await logAuditAction(context, access ? 'ASSIGN_GROUP' : 'REVOKE_GROUP', groupId, { userId, deviceCount: 'cascade' });
+
+        return { success: true };
+    } catch (error: any) {
+        console.error('Error in assignUserToGroup:', error);
+        throw new functions.https.HttpsError('internal', 'Failed to update group assignment');
+    }
+});
+
+// ========================================
+// 7.6. MANAGE GROUP (Create/Update Rooms)
+// ========================================
+export const manageGroup = functions.https.onCall(async (data: { groupId?: string, name: string, deviceIds: string[] }, context) => {
+    if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'Login required');
+
+    const tenantId = context.auth.token.tenantId as string;
+    const role = context.auth.token.role as string;
+    const { groupId, name, deviceIds } = data;
+
+    // 1. Authorization
+    if (role !== 'tenant_admin' && role !== 'super_admin' && role !== 'admin') {
+        throw new functions.https.HttpsError('permission-denied', 'Only admins can manage groups');
+    }
+
+    if (!tenantId || !name || !Array.isArray(deviceIds)) {
+        throw new functions.https.HttpsError('invalid-argument', 'Missing required fields');
+    }
+
+    try {
+        const id = groupId || generateUniqueId();
+        const groupRef = db.collection('tenants').doc(tenantId).collection('groups').doc(id);
+
+        const groupData = {
+            name,
+            deviceIds,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            // If it's a new group, add createdAt
+            ...(!groupId ? { createdAt: admin.firestore.FieldValue.serverTimestamp(), members: [] } : {})
+        };
+
+        await groupRef.set(groupData, { merge: true });
+
+        await logAuditAction(context, groupId ? 'UPDATE_GROUP' : 'CREATE_GROUP', id, { name, deviceCount: deviceIds.length });
+
+        return { success: true, groupId: id };
+    } catch (error: any) {
+        console.error('Error in manageGroup:', error);
+        throw new functions.https.HttpsError('internal', 'Failed to manage group');
+    }
+});
 export const manageDeviceType = functions.https.onCall(async (data: ManageDeviceTypeRequest, context) => {
     if (!context.auth || context.auth.token.role !== 'super_admin') {
         throw new functions.https.HttpsError('permission-denied', 'Super Admin privileges required');

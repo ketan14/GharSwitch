@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { collection, query, onSnapshot, DocumentData } from 'firebase/firestore';
+import { collection, query, onSnapshot, DocumentData, where } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
 
@@ -10,10 +10,11 @@ export interface Device {
     status?: 'ONLINE' | 'OFFLINE';
     metadata?: any;
     config?: any;
+    assignedUsers?: string[];
 }
 
 export function useDevices() {
-    const { tenantId } = useAuth();
+    const { tenantId, user, role: userRole } = useAuth();
     const [devices, setDevices] = useState<Device[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<Error | null>(null);
@@ -29,7 +30,15 @@ export function useDevices() {
         }
 
         const devicesRef = collection(db, `tenants/${tenantId}/devices`);
-        const q = query(devicesRef);
+
+        // 1.5. Authorization-Aware Query
+        // Admins can see EVERYTHING in the tenant
+        // Standard users can ONLY see what they are assigned to
+        const isAdmin = ['super_admin', 'tenant_admin', 'admin'].includes(userRole?.toLowerCase().replace('-', '_') || '');
+
+        const q = isAdmin
+            ? query(devicesRef)
+            : query(devicesRef, where('assignedUsers', 'array-contains', user?.uid));
 
         const unsubscribe = onSnapshot(
             q,
@@ -52,7 +61,7 @@ export function useDevices() {
         );
 
         return () => unsubscribe();
-    }, [tenantId]);
+    }, [tenantId, user?.uid, userRole]);
 
     // 2. Listen to RTDB Presence for Live Status
     useEffect(() => {
