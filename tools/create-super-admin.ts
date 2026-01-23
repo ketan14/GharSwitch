@@ -5,7 +5,7 @@ import * as path from 'path';
 // Load environment variables if needed, though usually we rely on GOOGLE_APPLICATION_CREDENTIALS
 dotenv.config();
 
-const SERVICE_ACCOUNT_PATH = path.join(__dirname, '../service-account.json');
+const SERVICE_ACCOUNT_PATH = path.join(__dirname, 'service-account.json');
 
 if (!process.env.GOOGLE_APPLICATION_CREDENTIALS && !require('fs').existsSync(SERVICE_ACCOUNT_PATH)) {
     console.error("ERROR: strict mode requires a service account.");
