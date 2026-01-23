@@ -5,6 +5,7 @@
     "scripts": {
         "dev": "next dev",
         "build": "next build",
+        "postbuild": "cp -r .next/standalone/apps/web-portal/.next .next/standalone/.next && cp -r public .next/standalone/public",
         "start": "next start"
     },
     "dependencies": {
