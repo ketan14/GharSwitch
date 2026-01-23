@@ -99,6 +99,6 @@ API_KEY = "AIzaSy..."
 DEVICE_SECRET = "my-secure-password-123" 
 ```
 
----
+------
 Developed for high-security IoT environments. 🛡️ 💡
 
