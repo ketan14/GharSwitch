@@ -16,8 +16,16 @@ const firebaseConfig = {
     databaseURL: process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL,
 };
 
-// Initialize Firebase only once
-const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
+// Initialize Firebase only once with basic validation for build-time safety
+const isConfigValid = !!firebaseConfig.apiKey && firebaseConfig.apiKey !== 'undefined';
+
+if (!isConfigValid && typeof window === 'undefined') {
+    console.warn('⚠️ Firebase API Key is missing or invalid during build. Static generation might fail.');
+}
+
+const app = getApps().length === 0
+    ? (isConfigValid ? initializeApp(firebaseConfig) : ({} as any))
+    : getApps()[0];
 
 export const auth = getAuth(app);
 export const db = getFirestore(app);
