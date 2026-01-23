@@ -1,3 +1,6 @@
+"""
+Diagnostic version of boot.py - removes potentially problematic power management setting
+"""
 import network
 import time
 import config
@@ -22,17 +25,9 @@ def connect_wifi():
     if wlan.isconnected():
         print('WiFi Connected!')
         print('IP Address:', wlan.ifconfig()[0])
-        
-        # Disable Power Saving Mode for lower latency
-        # Wrapped in try-except because some firmware versions/hardware (like Pico 2) 
-        # may handle these flags differently.
-        try:
-            # 0xa11140 is a common flag for PM_NONE, but we'll try to be safe
-            wlan.config(pm=0xa11140) 
-            print('WiFi Power Management: DISABLED (High Performance)')
-        except Exception as e:
-            print(f'Warning: Could not set WiFi Power Management: {e}')
+        # REMOVED: Power management setting that might cause crashes
+        # wlan.config(pm=0xa11140) 
     else:
-        print('WiFi Connection Failed! (Continuing to main.py)')
+        print('WiFi Connection Failed!')
 
 connect_wifi()
