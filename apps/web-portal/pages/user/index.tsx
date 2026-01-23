@@ -82,6 +82,7 @@ export default function UserDashboard() {
                 deviceName={device.name}
                 deviceType={device.type}
                 status={device.status as 'ONLINE' | 'OFFLINE' | undefined}
+                switchNames={device.switchNames}
               />
             ))}
           </div>

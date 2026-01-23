@@ -11,6 +11,7 @@ export interface Device {
     metadata?: any;
     config?: any;
     assignedUsers?: string[];
+    switchNames?: string[];
 }
 
 export function useDevices() {

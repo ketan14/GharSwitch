@@ -10,13 +10,13 @@
   ],
   "scripts": {
     "build": "npm run build --workspaces",
+    "build:hosting": "npm run build -w web-portal",
+    "build:functions": "npm run build -w functions",
     "test": "npm run test --workspaces",
     "lint": "npm run lint --workspaces",
-    "deploy": "firebase deploy",
-    "deploy:hosting": "firebase deploy --only hosting",
-    "deploy-functions": "firebase deploy --only functions",
-    "deploy:dev": "firebase use default && firebase deploy",
-    "deploy:prod": "firebase use prod && firebase deploy"
+    "deploy": "npm run build && firebase deploy",
+    "deploy:hosting": "npm run build:hosting && firebase deploy --only hosting",
+    "deploy:functions": "npm run build:functions && firebase deploy --only functions"
   },
   "devDependencies": {
     "typescript": "^5.0.0",

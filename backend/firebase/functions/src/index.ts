@@ -86,6 +86,7 @@ export interface GlobalDevice {
     model: string;
     secretHash: string;
     claimedBy: string | null;
+    switchNames?: string[];
 }
 
 export interface Tenant {
@@ -103,6 +104,7 @@ export interface Device {
     metadata: any;
     config: any;
     assignedUsers?: string[];
+    switchNames?: string[];
     status?: string;
     registeredAt: Date;
 }
@@ -454,7 +456,6 @@ export const registerDevice = functions.https.onCall(async (data: RegisterDevice
         if (!globalDevSnap.exists) {
             throw new functions.https.HttpsError('not-found', 'Invalid Hardware');
         }
-
         const globalDev = globalDevSnap.data() as GlobalDevice;
         if (globalDev.secretHash !== claimCode) {
             throw new functions.https.HttpsError('permission-denied', 'Invalid claim code');
@@ -480,11 +481,15 @@ export const registerDevice = functions.https.onCall(async (data: RegisterDevice
 
         tx.update(globalDevRef, { claimedBy: tenantId });
 
+        // Use pre-defined switch names from global registry OR defaults
+        const defaultSwitchNames = globalDev.switchNames || ['Switch 1', 'Switch 2', 'Switch 3', 'Switch 4'];
+
         const newDevice: Device = {
             name: 'New Switch',
             type: globalDev.model,
             metadata: { hardwareRev: '1.0', firmwareVersion: '0.0.1' },
             config: {},
+            switchNames: defaultSwitchNames,
             status: 'OFFLINE',
             registeredAt: new Date()
         };
@@ -729,6 +734,45 @@ export const assignUserToGroup = functions.https.onCall(async (data: { groupId: 
     } catch (error: any) {
         console.error('Error in assignUserToGroup:', error);
         throw new functions.https.HttpsError('internal', 'Failed to update group assignment');
+    }
+});
+
+// ========================================
+// 7.7. UPDATE SWITCH NAMES (Tenant Admin/Admin)
+// ========================================
+export const updateSwitchNames = functions.https.onCall(async (data: { deviceId: string, switchNames: string[] }, context) => {
+    if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'Login required');
+
+    const tenantId = context.auth.token.tenantId as string;
+    const role = context.auth.token.role as string;
+    const { deviceId, switchNames } = data;
+
+    // 1. Authorization
+    if (role !== 'tenant_admin' && role !== 'super_admin' && role !== 'admin') {
+        throw new functions.https.HttpsError('permission-denied', 'Only admins can update switch names');
+    }
+
+    if (!tenantId || !deviceId || !Array.isArray(switchNames)) {
+        throw new functions.https.HttpsError('invalid-argument', 'Missing required fields');
+    }
+
+    if (switchNames.length > 8) { // Safety cap
+        throw new functions.https.HttpsError('invalid-argument', 'Too many switch names');
+    }
+
+    try {
+        const deviceRef = db.collection('tenants').doc(tenantId).collection('devices').doc(deviceId);
+        await deviceRef.update({
+            switchNames,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+
+        await logAuditAction(context, 'UPDATE_SWITCH_NAMES', deviceId, { switchNames });
+
+        return { success: true };
+    } catch (error: any) {
+        console.error('Error in updateSwitchNames:', error);
+        throw new functions.https.HttpsError('internal', 'Failed to update switch names');
     }
 });
 

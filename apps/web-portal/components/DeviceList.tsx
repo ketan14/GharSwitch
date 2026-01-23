@@ -92,6 +92,7 @@ export default function DeviceList() {
             deviceType={device.type}
             status={device.status as 'ONLINE' | 'OFFLINE' | undefined}
             assignedUsers={device.assignedUsers}
+            switchNames={device.switchNames}
           />
         ))}
       </div>
