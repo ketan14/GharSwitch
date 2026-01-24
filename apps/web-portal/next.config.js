@@ -5,6 +5,8 @@ const nextConfig = {
     reactStrictMode: true,
     transpilePackages: ["@ghar-switch/domain-types", "@ghar-switch/constants"],
     output: 'standalone',
+    experimental: {
+    }
 };
 
 module.exports = nextConfig;
