@@ -5,7 +5,7 @@
     "scripts": {
         "dev": "next dev",
         "build": "next build",
-        "postbuild": "rm -rf ../../.next/standalone && mkdir -p ../../.next/standalone/.next && cp -r .next/standalone/. ../../.next/standalone/ && cp -r .next/standalone/apps/web-portal/.next/. ../../.next/standalone/.next/ && cp .next/standalone/apps/web-portal/server.js ../../.next/standalone/",
+        "postbuild": "rm -rf ../../.next/standalone && mkdir -p ../../.next/standalone/.next && cp -r .next/standalone/. ../../.next/standalone/ && cp -r .next/standalone/apps/web-portal/.next/. ../../.next/standalone/.next/ && cp .next/standalone/apps/web-portal/server.js ../../.next/standalone/ && cp -r .next/static ../../.next/standalone/.next/static && (test -d public && cp -r public ../../.next/standalone/public || true)",
         "start": "next start"
     },
     "dependencies": {
