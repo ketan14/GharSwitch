@@ -73,6 +73,7 @@ export interface Device {
 }
 
 export interface GlobalDevice {
+    name?: string;
     serialNumber: string;
     model: string;
     secretHash: string;

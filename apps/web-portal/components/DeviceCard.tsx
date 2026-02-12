@@ -4,6 +4,7 @@ import { useSendCommand, SwitchTarget } from '../hooks/useSendCommand';
 import { useAuth } from '../context/AuthContext';
 import DeviceAccessControl from './DeviceAccessControl';
 import { useUpdateSwitchNames } from '../hooks/useUpdateSwitchNames';
+import { useUpdateDeviceName } from '../hooks/useUpdateDeviceName';
 
 interface DeviceCardProps {
   deviceId: string;
@@ -27,10 +28,14 @@ export default function DeviceCard({ deviceId, deviceName, deviceType, status, a
   const [showAccess, setShowAccess] = React.useState(false);
 
   const isAdmin = ['super_admin', 'tenant_admin', 'admin'].includes(normalizedRole || '');
+  const canEditDeviceName = ['super_admin', 'tenant_admin'].includes(normalizedRole || '');
 
   const { updateSwitchNames, loading: updatingNames } = useUpdateSwitchNames();
+  const { updateDeviceName, loading: updatingDeviceName } = useUpdateDeviceName();
   const [isEditingNames, setIsEditingNames] = React.useState(false);
   const [editedNames, setEditedNames] = React.useState<string[]>([]);
+  const [isEditingDeviceName, setIsEditingDeviceName] = React.useState(false);
+  const [editedDeviceName, setEditedDeviceName] = React.useState(deviceName);
 
   // Initialize editedNames when switchNames prop changes
   React.useEffect(() => {
@@ -44,12 +49,27 @@ export default function DeviceCard({ deviceId, deviceName, deviceType, status, a
     setEditedNames(normalizedNames);
   }, [switchNames]); // runs when props arrive from Firestore
 
+  // Keep local device name in sync when props change (e.g. after Firestore update)
+  React.useEffect(() => {
+    setEditedDeviceName(deviceName);
+  }, [deviceName]);
+
   const handleSaveNames = async () => {
     try {
       await updateSwitchNames(deviceId, editedNames);
       setIsEditingNames(false);
     } catch (err) {
       alert('Failed to save switch names. Please try again.');
+    }
+  };
+
+  const handleSaveDeviceName = async () => {
+    try {
+      await updateDeviceName(deviceId, editedDeviceName);
+      setIsEditingDeviceName(false);
+    } catch (err) {
+      console.error('Failed to save device name:', err);
+      alert('Failed to save device name. Please try again.');
     }
   };
 
@@ -78,7 +98,55 @@ export default function DeviceCard({ deviceId, deviceName, deviceType, status, a
   return (
     <div className="device-card">
       <div className="device-header">
-        <h3>{deviceId}</h3>
+        <div className="device-header-main">
+          {canEditDeviceName ? (
+            <div className="device-name-edit">
+              {isEditingDeviceName ? (
+                <>
+                  <input
+                    className="device-name-input"
+                    type="text"
+                    value={editedDeviceName}
+                    onChange={(e) => setEditedDeviceName(e.target.value)}
+                    placeholder="Device name"
+                  />
+                  <button
+                    className="btn-save-device-name"
+                    onClick={handleSaveDeviceName}
+                    disabled={updatingDeviceName || !editedDeviceName.trim()}
+                  >
+                    {updatingDeviceName ? 'Saving...' : 'Save'}
+                  </button>
+                  <button
+                    className="btn-cancel-device-name"
+                    onClick={() => {
+                      setIsEditingDeviceName(false);
+                      setEditedDeviceName(deviceName);
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </>
+              ) : (
+                <>
+                  <h3>{deviceName || deviceId}</h3>
+                  <button
+                    className="btn-inline-edit"
+                    onClick={() => setIsEditingDeviceName(true)}
+                  >
+                    Edit
+                  </button>
+                </>
+              )}
+              <div className="device-id-subtle">{deviceId}</div>
+            </div>
+          ) : (
+            <div>
+              <h3>{deviceName || deviceId}</h3>
+              <div className="device-id-subtle">{deviceId}</div>
+            </div>
+          )}
+        </div>
         <span className={`status-badge ${status?.toLowerCase()}`}>
           {status || 'UNKNOWN'}
         </span>

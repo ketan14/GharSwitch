@@ -82,6 +82,7 @@ export interface DeviceCommand {
 }
 
 export interface GlobalDevice {
+    name?: string;
     serialNumber: string;
     model: string;
     secretHash: string;
@@ -485,7 +486,8 @@ export const registerDevice = functions.https.onCall(async (data: RegisterDevice
         const defaultSwitchNames = globalDev.switchNames || ['Switch 1', 'Switch 2', 'Switch 3', 'Switch 4'];
 
         const newDevice: Device = {
-            name: 'New Switch',
+            // Prefer a human-friendly name from the global registry, fallback to default
+            name: globalDev.name || 'New Switch',
             type: globalDev.model,
             metadata: { hardwareRev: '1.0', firmwareVersion: '0.0.1' },
             config: {},
@@ -777,6 +779,47 @@ export const updateSwitchNames = functions.https.onCall(async (data: { deviceId:
 });
 
 // ========================================
+// 7.8. UPDATE DEVICE NAME (Tenant Admin Only)
+// ========================================
+export const updateDeviceName = functions.https.onCall(async (data: { deviceId: string, name: string }, context) => {
+    if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'Login required');
+
+    const tenantId = context.auth.token.tenantId as string;
+    const role = context.auth.token.role as string;
+    const { deviceId, name } = data;
+
+    // 1. Authorization - restrict to tenant_admin (and super_admin for break-glass)
+    if (role !== 'tenant_admin' && role !== 'super_admin') {
+        throw new functions.https.HttpsError('permission-denied', 'Only tenant admins can update device names');
+    }
+
+    if (!tenantId || !deviceId || !name || typeof name !== 'string') {
+        throw new functions.https.HttpsError('invalid-argument', 'Missing or invalid fields');
+    }
+
+    // Basic length guardrails
+    const trimmed = name.trim();
+    if (trimmed.length === 0 || trimmed.length > 64) {
+        throw new functions.https.HttpsError('invalid-argument', 'Device name must be between 1 and 64 characters');
+    }
+
+    try {
+        const deviceRef = db.collection('tenants').doc(tenantId).collection('devices').doc(deviceId);
+        await deviceRef.update({
+            name: trimmed,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+
+        await logAuditAction(context, 'UPDATE_DEVICE_NAME', deviceId, { name: trimmed });
+
+        return { success: true };
+    } catch (error: any) {
+        console.error('Error in updateDeviceName:', error);
+        throw new functions.https.HttpsError('internal', 'Failed to update device name');
+    }
+});
+
+// ========================================
 // 7.6. MANAGE GROUP (Create/Update Rooms)
 // ========================================
 export const manageGroup = functions.https.onCall(async (data: { groupId?: string, name: string, deviceIds: string[] }, context) => {
@@ -947,7 +990,8 @@ export const getDeviceToken = functions.https.onRequest(
         }
 
         const body = (req.body || {}) as any;
-        const { deviceId, deviceSecret } = body;
+        // MAC Address is now expected
+        const { deviceId, deviceSecret, macAddress } = body;
 
         // Basic validation
         if (!deviceId || !deviceSecret) {
@@ -974,6 +1018,7 @@ export const getDeviceToken = functions.https.onRequest(
             // In production, compare hashes. For now, direct string match.
             const storedSecret = String(deviceData.sharedSecret || "");
             const orgId = deviceData.orgId || null;
+            const storedMac = deviceData.macAddress || null;
 
             if (!storedSecret) {
                 res.status(500).json({ error: "device sharedSecret not configured on server" });
@@ -985,9 +1030,27 @@ export const getDeviceToken = functions.https.onRequest(
                 return;
             }
 
+            // 1.5. MAC Address Binding (Trust On First Use)
+            if (macAddress) {
+                if (!storedMac) {
+                    // First time connecting? Bind this hardware to this ID.
+                    await deviceRef.update({
+                        macAddress: macAddress,
+                        boundAt: admin.firestore.FieldValue.serverTimestamp()
+                    });
+                    console.log(`[AUTH] Device ${deviceId} bound to MAC ${macAddress}`);
+                } else if (storedMac !== macAddress) {
+                    // Mismatch! Start the alarm!
+                    console.warn(`[AUTH] SECURITY ALERT: Device ${deviceId} attempted login with MAC ${macAddress} but is bound to ${storedMac}`);
+                    res.status(401).json({ error: "Hardware Mismatch: Duplicate Device ID detected" });
+                    return;
+                }
+            }
+
             // 2. Create Custom Token with SaaS Claims
             // The UID 'device:<deviceId>' matches the RTDB rules
             const uid = `device:${deviceId}`;
+            // Add custom claim so rules can verify strict ownership if needed
             const additionalClaims = { orgId, isIot: true, deviceId };
 
             const customToken = await admin.auth().createCustomToken(uid, additionalClaims);
@@ -999,3 +1062,49 @@ export const getDeviceToken = functions.https.onRequest(
         }
     }
 );
+
+export const resetDeviceHardware = functions.https.onCall(async (data: { deviceId: string }, context) => {
+    // 1. Authenticate & Verify Role (Admin only)
+    if (!context.auth) {
+        throw new functions.https.HttpsError('unauthenticated', 'Login required');
+    }
+
+    const { deviceId } = data;
+    const role = context.auth.token.role as string;
+    const tenantId = context.auth.token.tenantId as string;
+
+    const isAdmin = ['super_admin', 'tenant_admin', 'admin'].includes(role);
+    if (!isAdmin) {
+        throw new functions.https.HttpsError('permission-denied', 'Only admins can reset hardware locks');
+    }
+
+    if (!deviceId) {
+        throw new functions.https.HttpsError('invalid-argument', 'Missing deviceId');
+    }
+
+    try {
+        // 2. Verify Ownership (for Tenant Admins)
+        // Ensure this device belongs to their tenant
+        const deviceDoc = await db.collection("tenants").doc(tenantId).collection("devices").doc(deviceId).get();
+        if (!deviceDoc.exists) {
+            // Check global devices if super_admin? 
+            // For now, let's enforce tenant ownership for safety.
+            throw new functions.https.HttpsError('not-found', 'Device not found in your organization');
+        }
+
+        // 3. Clear the MAC binding
+        await db.collection("global_devices").doc(deviceId).update({
+            macAddress: admin.firestore.FieldValue.delete(),
+            boundAt: admin.firestore.FieldValue.delete(),
+            resetBy: context.auth.uid,
+            resetAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+
+        await logAuditAction(context, 'RESET_DEVICE_HARDWARE', deviceId, { reason: 'Replacement/Repair' });
+
+        return { success: true };
+    } catch (error: any) {
+        console.error("Error resetting hardware:", error);
+        throw new functions.https.HttpsError('internal', "Failed to reset hardware lock");
+    }
+});

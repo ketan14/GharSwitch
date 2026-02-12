@@ -19,6 +19,7 @@ async function seedGlobalDevices() {
     const devices = [
         {
             deviceId: 'ESP32_DEMO_001',
+            name: 'Demo Switch 1',
             serialNumber: 'SN-2024-001',
             model: '4CH-RELAY-V1',
             secretHash: 'CLAIM_CODE_001', // In production, this should be a hash
@@ -26,6 +27,7 @@ async function seedGlobalDevices() {
         },
         {
             deviceId: 'ESP32_DEMO_002',
+            name: 'Demo Switch 2',
             serialNumber: 'SN-2024-002',
             model: '4CH-RELAY-V1',
             secretHash: 'CLAIM_CODE_002',
@@ -33,6 +35,7 @@ async function seedGlobalDevices() {
         },
         {
             deviceId: 'ESP32_DEMO_003',
+            name: 'Demo Switch 3',
             serialNumber: 'SN-2024-003',
             model: '4CH-RELAY-V1',
             secretHash: 'CLAIM_CODE_003',
