@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { collection, query, onSnapshot, DocumentData, where } from 'firebase/firestore';
+import { useEffect, useState, useMemo } from 'react';
+import { collection, query, onSnapshot, where } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
 
@@ -17,7 +17,8 @@ export interface Device {
 export function useDevices() {
     const { tenantId, user, role: userRole } = useAuth();
     const [devices, setDevices] = useState<Device[]>([]);
-    const [loading, setLoading] = useState(true);
+    const [devicesLoading, setDevicesLoading] = useState(true);
+    const [presenceLoading, setPresenceLoading] = useState(true);
     const [error, setError] = useState<Error | null>(null);
 
     const [presence, setPresence] = useState<Record<string, any>>({});
@@ -26,15 +27,11 @@ export function useDevices() {
     useEffect(() => {
         if (!tenantId) {
             setDevices([]);
-            setLoading(false);
+            setDevicesLoading(false);
             return;
         }
 
         const devicesRef = collection(db, `tenants/${tenantId}/devices`);
-
-        // 1.5. Authorization-Aware Query
-        // Admins can see EVERYTHING in the tenant
-        // Standard users can ONLY see what they are assigned to
         const isAdmin = ['super_admin', 'tenant_admin', 'admin'].includes(userRole?.toLowerCase().replace('-', '_') || '');
 
         const q = isAdmin
@@ -52,12 +49,12 @@ export function useDevices() {
                     } as Device);
                 });
                 setDevices(deviceList);
-                setLoading(false);
+                setDevicesLoading(false);
             },
             (err) => {
                 console.error('Error fetching devices:', err);
                 setError(err as Error);
-                setLoading(false);
+                setDevicesLoading(false);
             }
         );
 
@@ -66,40 +63,53 @@ export function useDevices() {
 
     // 2. Listen to RTDB Presence for Live Status
     useEffect(() => {
-        if (!tenantId) return;
+        if (!tenantId) {
+            setPresenceLoading(false);
+            return;
+        }
 
-        const { ref, onValue, off } = require('firebase/database'); // Lazy load/require to match existing style or import above
+        const { ref, onValue, off } = require('firebase/database');
         const { rtdb } = require('../lib/firebase');
 
         const presenceRef = ref(rtdb, `tenants/${tenantId}/presence`);
 
         const unsub = onValue(presenceRef, (snapshot: any) => {
             setPresence(snapshot.val() || {});
+            setPresenceLoading(false);
+        }, (err: any) => {
+            console.error('Presence listener error:', err);
+            setPresenceLoading(false);
         });
 
         return () => off(presenceRef, 'value', unsub);
     }, [tenantId]);
 
     // 3. Merge Data (Calculate Online/Offline based on Heartbeat)
-    const combinedDevices = devices.map(device => {
-        const devicePresence = presence[device.id];
-        let isOnline = false;
+    const combinedDevices = useMemo(() => {
+        return devices.map(device => {
+            const devicePresence = presence[device.id];
+            let isOnline = false;
 
-        if (devicePresence && devicePresence.lastSeen) {
-            const now = Date.now();
-            const lastSeen = devicePresence.lastSeen;
-            // 12 Minute Grace Period (Heartbeat is 10m)
-            const THRESHOLD = 12 * 60 * 1000;
-            if (now - lastSeen < THRESHOLD) {
-                isOnline = true;
+            if (devicePresence && devicePresence.lastSeen) {
+                const now = Date.now();
+                const lastSeen = devicePresence.lastSeen;
+                // 12 Minute Grace Period (Heartbeat is 10m)
+                const THRESHOLD = 12 * 60 * 1000;
+
+                if (Math.abs(now - lastSeen) > THRESHOLD) {
+                    isOnline = true;
+                }
             }
-        }
+            return {
+                ...device,
+                status: isOnline ? 'ONLINE' : 'OFFLINE'
+            };
+        });
+    }, [devices, presence]);
 
-        return {
-            ...device,
-            status: isOnline ? 'ONLINE' : 'OFFLINE'
-        };
-    });
-
-    return { devices: combinedDevices, loading, error };
+    return {
+        devices: combinedDevices,
+        loading: devicesLoading || presenceLoading,
+        error
+    };
 }

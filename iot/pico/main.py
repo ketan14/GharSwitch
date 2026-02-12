@@ -1,6 +1,7 @@
 import gc
 import ujson
 import urequests
+import ubinascii
 import time
 import ntptime
 from machine import Pin
@@ -81,7 +82,15 @@ def get_id_token():
     try:
         # Step 1: Get Custom Token from your Cloud Function
         # Note: You must add AUTH_URL, DEVICE_SECRET, API_KEY to config.py
-        payload = ujson.dumps({"deviceId": DEVICE_ID, "deviceSecret": config.DEVICE_SECRET})
+        
+        # Get MAC Address
+        mac = ubinascii.hexlify(network.WLAN(network.STA_IF).config('mac')).decode()
+        
+        payload = ujson.dumps({
+            "deviceId": DEVICE_ID, 
+            "deviceSecret": config.DEVICE_SECRET,
+            "macAddress": mac
+        })
         r = urequests.post(config.AUTH_URL, data=payload, headers={'Content-Type': 'application/json'})
         
         if r.status_code != 200:
@@ -170,7 +179,7 @@ def heartbeat():
         if not ID_TOKEN: return
 
     url = f"{DATABASE_URL}/tenants/{TENANT_ID}/presence/{DEVICE_ID}.json?auth={ID_TOKEN}"
-    payload = {"online": True, "lastSeen": get_current_unix_ms()}
+    payload = {"online": True, "lastSeen": {".sv": "timestamp"}}
     
     try:
         r = urequests.put(url, data=ujson.dumps(payload))
