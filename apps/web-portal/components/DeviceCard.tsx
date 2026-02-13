@@ -4,6 +4,7 @@ import { useSendCommand, SwitchTarget } from '../hooks/useSendCommand';
 import { useAuth } from '../context/AuthContext';
 import DeviceAccessControl from './DeviceAccessControl';
 import { useUpdateSwitchNames } from '../hooks/useUpdateSwitchNames';
+import { useUpdateDeviceName } from '../hooks/useUpdateDeviceName';
 
 interface DeviceCardProps {
   deviceId: string;
@@ -15,7 +16,7 @@ interface DeviceCardProps {
 }
 
 export default function DeviceCard({ deviceId, deviceName, deviceType, status, assignedUsers, switchNames }: DeviceCardProps) {
-  const { state, loading: stateLoading, pendingSwitches } = useDeviceState(deviceId);
+  const { state, loading: stateLoading, pendingSwitches, pendingCountBySwitch } = useDeviceState(deviceId);
   const { sendCommand, loading: commandLoading } = useSendCommand();
   const { role } = useAuth();
   // Normalize role for comparison (handles 'ADMIN' or 'tenant-admin')
@@ -27,10 +28,14 @@ export default function DeviceCard({ deviceId, deviceName, deviceType, status, a
   const [showAccess, setShowAccess] = React.useState(false);
 
   const isAdmin = ['super_admin', 'tenant_admin', 'admin'].includes(normalizedRole || '');
+  const canEditDeviceName = ['super_admin', 'tenant_admin', 'user'].includes(normalizedRole || '');
 
   const { updateSwitchNames, loading: updatingNames } = useUpdateSwitchNames();
+  const { updateDeviceName, loading: updatingDeviceName } = useUpdateDeviceName();
   const [isEditingNames, setIsEditingNames] = React.useState(false);
   const [editedNames, setEditedNames] = React.useState<string[]>([]);
+  const [isEditingDeviceName, setIsEditingDeviceName] = React.useState(false);
+  const [editedDeviceName, setEditedDeviceName] = React.useState(deviceName);
 
   // Initialize editedNames when switchNames prop changes
   React.useEffect(() => {
@@ -44,12 +49,27 @@ export default function DeviceCard({ deviceId, deviceName, deviceType, status, a
     setEditedNames(normalizedNames);
   }, [switchNames]); // runs when props arrive from Firestore
 
+  // Keep local device name in sync when props change (e.g. after Firestore update)
+  React.useEffect(() => {
+    setEditedDeviceName(deviceName);
+  }, [deviceName]);
+
   const handleSaveNames = async () => {
     try {
       await updateSwitchNames(deviceId, editedNames);
       setIsEditingNames(false);
     } catch (err) {
       alert('Failed to save switch names. Please try again.');
+    }
+  };
+
+  const handleSaveDeviceName = async () => {
+    try {
+      await updateDeviceName(deviceId, editedDeviceName);
+      setIsEditingDeviceName(false);
+    } catch (err) {
+      console.error('Failed to save device name:', err);
+      alert('Failed to save device name. Please try again.');
     }
   };
 
@@ -74,17 +94,91 @@ export default function DeviceCard({ deviceId, deviceName, deviceType, status, a
   const switches: SwitchTarget[] = ['s1', 's2', 's3', 's4'];
 
   const isOffline = status === 'OFFLINE';
+  const pendingCount = pendingSwitches ? Object.keys(pendingSwitches).length : 0;
+  const hasPendingSwitches = pendingCount > 0;
+
+  const cardClass = [
+    'device-card',
+    hasPendingSwitches && 'has-pending',
+    isOffline && hasPendingSwitches && 'offline-with-pending'
+  ].filter(Boolean).join(' ');
 
   return (
-    <div className="device-card">
+    <div className={cardClass}>
       <div className="device-header">
-        <h3>{deviceId}</h3>
+        <div className="device-header-main">
+          {canEditDeviceName ? (
+            <div className="device-name-edit">
+              {isEditingDeviceName ? (
+                <div className="device-name-row">
+                  <input
+                    className="device-name-input"
+                    type="text"
+                    value={editedDeviceName}
+                    onChange={(e) => setEditedDeviceName(e.target.value)}
+                    placeholder="Device name"
+                  />
+                  <button
+                    type="button"
+                    className="icon-btn btn-save-device-name"
+                    onClick={handleSaveDeviceName}
+                    disabled={updatingDeviceName || !editedDeviceName.trim()}
+                    title="Save name"
+                    aria-label="Save name"
+                  >
+                    {updatingDeviceName ? '…' : '✓'}
+                  </button>
+                  <button
+                    type="button"
+                    className="icon-btn btn-cancel-device-name"
+                    onClick={() => {
+                      setIsEditingDeviceName(false);
+                      setEditedDeviceName(deviceName);
+                    }}
+                    title="Cancel"
+                    aria-label="Cancel"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ) : (
+                <div className="device-name-row">
+                  <h3>{deviceName || deviceId}</h3>
+                  <button
+                    type="button"
+                    className="icon-btn btn-inline-edit"
+                    onClick={() => setIsEditingDeviceName(true)}
+                    title="Edit device name"
+                    aria-label="Edit device name"
+                  >
+                    ✎
+                  </button>
+                </div>
+              )}
+              <div className="device-id-subtle">{deviceId}</div>
+            </div>
+          ) : (
+            <div>
+              <h3>{deviceName || deviceId}</h3>
+              <div className="device-id-subtle">{deviceId}</div>
+            </div>
+          )}
+        </div>
         <span className={`status-badge ${status?.toLowerCase()}`}>
           {status || 'UNKNOWN'}
         </span>
       </div>
 
       <div className="device-type">{deviceType}</div>
+
+      {hasPendingSwitches && (
+        <div className="pending-banner" role="status">
+          <span className="pending-banner-text">
+            {pendingCount} command{pendingCount !== 1 ? 's' : ''} queued
+            {isOffline && ' — will apply when device is back online'}
+          </span>
+        </div>
+      )}
 
       <div className="switches-grid">
         {switches.map((switchId, index) => {
@@ -104,6 +198,8 @@ export default function DeviceCard({ deviceId, deviceName, deviceType, status, a
             statusText = !switchState ? 'Turning On...' : 'Turning Off...';
           }
 
+          const pendingCount = pendingCountBySwitch?.[switchId] ?? 0;
+
           return (
             <div key={switchId} className="switch-container">
               <div className="label-row">
@@ -115,7 +211,14 @@ export default function DeviceCard({ deviceId, deviceName, deviceType, status, a
                 className={`switch-button ${switchState ? 'on' : 'off'} ${isBusy ? 'pending' : ''}`}
                 onClick={() => handleToggle(switchId, switchState)}
                 disabled={!canControl || isLoading || stateLoading || isBusy || isEditingNames}
+                title={pendingCount > 0 ? `${pendingCount} command${pendingCount !== 1 ? 's' : ''} queued for this switch` : undefined}
+                aria-label={pendingCount > 0 ? `${statusText}, ${pendingCount} queued` : statusText}
               >
+                {pendingCount > 0 && (
+                  <span className="switch-pending-badge" aria-hidden="true">
+                    {pendingCount > 99 ? '99+' : pendingCount}
+                  </span>
+                )}
                 {statusText}
               </button>
             </div>
@@ -212,11 +315,41 @@ export default function DeviceCard({ deviceId, deviceName, deviceType, status, a
           box-shadow: 0 2px 8px rgba(0,0,0,0.1);
         }
 
+        .device-card.has-pending {
+          border-color: #bdbdbd;
+          background: #fafafa;
+        }
+
+        .device-card.offline-with-pending {
+          border-color: #9e9e9e;
+          background: #f5f5f5;
+        }
+
+        .pending-banner {
+          padding: 6px 10px;
+          margin-bottom: 12px;
+          border-radius: 6px;
+          background: #eeeeee;
+          color: #616161;
+          font-size: 12px;
+          font-weight: 500;
+        }
+
+        .device-card.offline-with-pending .pending-banner {
+          background: #e0e0e0;
+          color: #424242;
+        }
+
         .device-header {
           display: flex;
           justify-content: space-between;
           align-items: center;
           margin-bottom: 12px;
+        }
+
+        .device-header-main {
+          flex: 1;
+          min-width: 0;
         }
 
         .device-header h3 {
@@ -240,6 +373,70 @@ export default function DeviceCard({ deviceId, deviceName, deviceType, status, a
         .status-badge.offline {
           background: #9e9e9e;
           color: white;
+        }
+
+        .device-name-edit {
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+        }
+
+        .device-name-row {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          min-width: 0;
+        }
+
+        .device-name-input {
+          flex: 1;
+          padding: 4px 8px;
+          font-size: 14px;
+          border-radius: 4px;
+          border: 1px solid #e0e0e0;
+        }
+
+        .device-id-subtle {
+          font-size: 11px;
+          color: #94a3b8;
+        }
+
+        .icon-btn {
+          width: 28px;
+          height: 28px;
+          padding: 0;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          border-radius: 8px;
+          border: 1px solid #e0e0e0;
+          font-size: 14px;
+          font-weight: 600;
+          cursor: pointer;
+          background: #f5f5f5; /* matches OFF switch */
+          color: #666;
+          line-height: 1;
+        }
+
+        .icon-btn:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
+        }
+
+        .btn-inline-edit {
+          /* uses .icon-btn base */
+        }
+
+        .btn-save-device-name {
+          background: #4caf50; /* matches ON switch */
+          border-color: #4caf50;
+          color: white;
+        }
+
+        .btn-cancel-device-name {
+          background: #f5f5f5;
+          border-color: #e0e0e0;
+          color: #666;
         }
 
         .device-type {
@@ -386,12 +583,35 @@ export default function DeviceCard({ deviceId, deviceName, deviceType, status, a
         }
 
         .switch-button {
+          position: relative;
           padding: 12px;
           border: none;
           border-radius: 8px;
           font-weight: 600;
           cursor: pointer;
           transition: all 0.2s;
+        }
+
+        .switch-pending-badge {
+          position: absolute;
+          top: 4px;
+          right: 4px;
+          min-width: 18px;
+          height: 18px;
+          padding: 0 5px;
+          border-radius: 9px;
+          font-size: 10px;
+          font-weight: 700;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          background: rgba(0, 0, 0, 0.35);
+          color: white;
+          line-height: 1;
+        }
+
+        .switch-button.pending .switch-pending-badge {
+          background: #616161;
         }
 
         .switch-button.on {
@@ -402,6 +622,17 @@ export default function DeviceCard({ deviceId, deviceName, deviceType, status, a
         .switch-button.off {
           background: #f5f5f5;
           color: #666;
+        }
+
+        .switch-button.pending {
+          background: #bdbdbd !important;
+          color: #616161 !important;
+          cursor: wait;
+        }
+
+        .switch-button.pending.on {
+          background: #9e9e9e !important;
+          color: #757575 !important;
         }
 
         .switch-button:disabled {
