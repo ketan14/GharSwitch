@@ -8,8 +8,6 @@ from machine import Pin
 import config
 import machine
 import network
-
-# Overclock to 240MHz for faster SSL/JSON processing
 machine.freq(240000000)
 
 # ====== Firebase RTDB Setup ======
@@ -28,7 +26,7 @@ wdt = None
 
 # Unix Epoch Delta (seconds between 1970-01-01 and 2000-01-01)
 # MicroPython uses 2000 epoch, JS/Firebase uses 1970
-UNIX_EPOCH_DELTA = 946684800
+UNIX_EPOCH_DELTA = 0
 
 def error_blink(seconds=5):
     """Blinks onboard LED for a short duration and returns (non-halting)"""
@@ -67,13 +65,25 @@ def sync_time():
     print("[TIME] Syncing time via NTP...")
     try:
         ntptime.settime()
-        print("[TIME] Time synced.")
+        # Get current timestamp in ms (1970 epoch)
+        ts = int((time.time() + UNIX_EPOCH_DELTA) * 1000)
+        print(f"[TIME] Time synced. Current timestamp: {ts}")
+        # Optional: print human-readable UTC time
+        print("[TIME] Human-readable:", time.gmtime())
     except Exception as e:
         print("[TIME] Failed to sync time:", e)
 
+
 def get_current_unix_ms():
-    """Returns current timestamp in ms (1970 Epoch) for Firebase"""
-    return int((time.time() + UNIX_EPOCH_DELTA) * 1000)
+    unix_seconds = time.time() + UNIX_EPOCH_DELTA
+    unix_ms = int(unix_seconds * 1000)
+    # Debug: print human-readable UTC
+    print("[DEBUG] UTC:", time.gmtime())
+    # Debug: print IST (UTC+5:30)
+    ist_offset = 5 * 3600 + 1800
+    print("[DEBUG] IST:", time.gmtime(time.time() + ist_offset))
+    print("[DEBUG] Unix ms:", unix_ms)
+    return unix_ms
 
 def get_id_token():
     """Exchanges Device Secret for ID Token via Cloud Function + Identity Toolkit"""
@@ -179,7 +189,8 @@ def heartbeat():
         if not ID_TOKEN: return
 
     url = f"{DATABASE_URL}/tenants/{TENANT_ID}/presence/{DEVICE_ID}.json?auth={ID_TOKEN}"
-    payload = {"online": True, "lastSeen": {".sv": "timestamp"}}
+    print("[HEARTBEAT] Last seen:", get_current_unix_ms())
+    payload = {"online": True, "lastSeen": get_current_unix_ms()}
     
     try:
         r = urequests.put(url, data=ujson.dumps(payload))

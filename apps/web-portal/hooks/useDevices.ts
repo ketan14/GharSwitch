@@ -84,19 +84,34 @@ export function useDevices() {
         return () => off(presenceRef, 'value', unsub);
     }, [tenantId]);
 
-    // 3. Merge Data (Calculate Online/Offline based on Heartbeat)
+    // 3. Merge Data (Online only if presence lastSeen within last hour)
+    // Policy: Store lastSeen in UTC in RTDB; do all "within last hour" math in UTC (no local time).
+    const ONE_HOUR_MS = 60 * 60 * 1000;
+
     const combinedDevices = useMemo(() => {
         return devices.map(device => {
             const devicePresence = presence[device.id];
             let isOnline = false;
 
-            if (devicePresence && devicePresence.lastSeen) {
-                const now = Date.now();
-                const lastSeen = devicePresence.lastSeen;
-                // 12 Minute Grace Period (Heartbeat is 10m)
-                const THRESHOLD = 12 * 60 * 1000;
+            if (devicePresence && devicePresence.lastSeen != null) {
+                // Compare UTC to UTC: Date.now() and RTDB lastSeen are both UTC milliseconds
+                const nowUtcMs = Date.now();
+                let lastSeenUtcMs = Number(devicePresence.lastSeen);
 
-                if (Math.abs(now - lastSeen) > THRESHOLD) {
+                // Normalize: Firebase server timestamp is UTC ms. Some devices send Unix seconds (10 digits).
+                if (lastSeenUtcMs > 0 && lastSeenUtcMs < 1e12) {
+                    lastSeenUtcMs = lastSeenUtcMs * 1000;
+                }
+
+                // If device clock is in the future (e.g. 2717666640000 = year 2056), cap to "now"
+                // so we still treat it as "just seen" and show ONLINE when they're sending heartbeats.
+                if (lastSeenUtcMs > nowUtcMs) {
+                    lastSeenUtcMs = nowUtcMs;
+                }
+
+                // Device is ONLINE if lastSeen (UTC) is within the last hour
+                const isWithinHour = nowUtcMs - lastSeenUtcMs <= ONE_HOUR_MS;
+                if (isWithinHour) {
                     isOnline = true;
                 }
             }

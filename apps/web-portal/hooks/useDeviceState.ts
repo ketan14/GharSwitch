@@ -27,6 +27,8 @@ export function useDeviceState(deviceId: string | null) {
 
     // Map pending commands to switch target states (true=ON, false=OFF)
     const [pendingSwitches, setPendingSwitches] = useState<Record<string, boolean>>({});
+    // Per-switch count of pending commands (for badge on button)
+    const [pendingCountBySwitch, setPendingCountBySwitch] = useState<Record<string, number>>({});
 
     // Store raw Firebase data to re-process for timeouts
     const rawCmdsRef = useRef<any>(null);
@@ -36,24 +38,24 @@ export function useDeviceState(deviceId: string | null) {
         const data = rawCmdsRef.current;
         if (!data) {
             setPendingSwitches({});
+            setPendingCountBySwitch({});
             return;
         }
 
         const busymap: Record<string, boolean> = {};
+        const countmap: Record<string, number> = {};
         const now = Date.now();
         const TIMEOUT_MS = 15000; // 15 Seconds UI Timeout
 
         Object.values(data).forEach((cmd: any) => {
-            // Filter out stale commands
-            if (cmd.timestamp && (now - cmd.timestamp > TIMEOUT_MS)) {
-                return; // Ignored (Visual Timeout)
-            }
+            if (cmd.timestamp && (now - cmd.timestamp > TIMEOUT_MS)) return;
+            if (!cmd.target || typeof cmd.action !== 'boolean') return;
 
-            if (cmd.target && typeof cmd.action === 'boolean') {
-                busymap[cmd.target] = cmd.action;
-            }
+            busymap[cmd.target] = cmd.action;
+            countmap[cmd.target] = (countmap[cmd.target] || 0) + 1;
         });
         setPendingSwitches(busymap);
+        setPendingCountBySwitch(countmap);
     }, []);
 
     useEffect(() => {
@@ -88,5 +90,5 @@ export function useDeviceState(deviceId: string | null) {
         };
     }, [tenantId, deviceId, recalcPending]);
 
-    return { state, loading, pendingSwitches };
+    return { state, loading, pendingSwitches, pendingCountBySwitch };
 }
