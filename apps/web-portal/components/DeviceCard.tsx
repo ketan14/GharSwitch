@@ -28,7 +28,7 @@ export default function DeviceCard({ deviceId, deviceName, deviceType, status, a
   const [showAccess, setShowAccess] = React.useState(false);
 
   const isAdmin = ['super_admin', 'tenant_admin', 'admin'].includes(normalizedRole || '');
-  const canEditDeviceName = ['super_admin', 'tenant_admin'].includes(normalizedRole || '');
+  const canEditDeviceName = ['super_admin', 'tenant_admin', 'user'].includes(normalizedRole || '');
 
   const { updateSwitchNames, loading: updatingNames } = useUpdateSwitchNames();
   const { updateDeviceName, loading: updatingDeviceName } = useUpdateDeviceName();
@@ -287,6 +287,11 @@ export default function DeviceCard({ deviceId, deviceName, deviceType, status, a
           margin-bottom: 12px;
         }
 
+        .device-header-main {
+          flex: 1;
+          min-width: 0;
+        }
+
         .device-header h3 {
           margin: 0;
           font-size: 18px;
@@ -308,6 +313,58 @@ export default function DeviceCard({ deviceId, deviceName, deviceType, status, a
         .status-badge.offline {
           background: #9e9e9e;
           color: white;
+        }
+
+        .device-name-edit {
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+        }
+
+        .device-name-edit > div:first-child {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .device-name-input {
+          flex: 1;
+          padding: 4px 8px;
+          font-size: 14px;
+          border-radius: 4px;
+          border: 1px solid #e0e0e0;
+        }
+
+        .device-id-subtle {
+          font-size: 11px;
+          color: #94a3b8;
+        }
+
+        .btn-inline-edit,
+        .btn-save-device-name,
+        .btn-cancel-device-name {
+          padding: 4px 10px;
+          border-radius: 999px;
+          border: 1px solid #e0e0e0;
+          font-size: 11px;
+          font-weight: 600;
+          cursor: pointer;
+          background: #f5f5f5; /* matches OFF switch */
+          color: #666;
+          white-space: nowrap;
+        }
+
+        .btn-save-device-name {
+          background: #4caf50; /* matches ON switch */
+          border-color: #4caf50;
+          color: white;
+        }
+
+        .btn-cancel-device-name {
+          /* neutral OFF style */
+          background: #f5f5f5;
+          border-color: #e0e0e0;
+          color: #666;
         }
 
         .device-type {
