@@ -247,12 +247,25 @@ def listen_for_commands():
     # Force Reconnect Logic (45 minutes) to avoid stale sockets/tokens
     last_reconnect_time = time.ticks_ms()
     RECONNECT_INTERVAL = 45 * 60 * 1000 
+    
+    # Force Hard Reset Logic (2 Hours)
+    system_start_sec = time.time()
+    HARD_RESET_INTERVAL_SEC = 2 * 60 * 60 # 2 Hours
 
     while True:
         try:
             if wdt: wdt.feed()
+            
+            if time.time() - system_start_sec > HARD_RESET_INTERVAL_SEC:
+                print("[SYSTEM] Performing scheduled 2-hour reboot for stability...")
+                machine.reset()
+
             print("[STREAM] Opening connection to Firebase...")
             
+            # Ensure WiFi is connected before attempting anything
+            ensure_wifi()
+            gc.collect()
+
             if not ID_TOKEN:
                  ID_TOKEN = get_id_token()
                  if not ID_TOKEN:
@@ -316,6 +329,11 @@ def listen_for_commands():
                     if time.ticks_diff(current_time, last_reconnect_time) > RECONNECT_INTERVAL:
                         print("[STREAM] Scheduled reconnection (45m). Restarting stream...")
                         break # Breaks inner loop, triggers outer loop to reconnect
+
+                    # 3. Check Hard Reset (2 hours workaround for idle issue)
+                    if time.time() - system_start_sec > HARD_RESET_INTERVAL_SEC:
+                        print("[SYSTEM] Performing scheduled 2-hour reboot for stability...")
+                        machine.reset()
 
                     # If we got data
                     if line:

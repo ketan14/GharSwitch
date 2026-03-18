@@ -36,3 +36,4 @@ def connect_wifi():
         print('WiFi Connection Failed! (Continuing to main.py)')
 
 connect_wifi()
+
