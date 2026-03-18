@@ -77,3 +77,4 @@ iot/python-simulator/__pycache__/
 iot/esp32/config.py
 iot/pico/config.py
 iot/esp32-cpp/data/config.json
+iot/esp32-cpp/src/config.h

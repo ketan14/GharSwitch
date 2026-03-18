@@ -81,12 +81,76 @@ export function useSuperAdmin() {
         }
     };
 
+    const getDeviceAccessDetails = async (deviceId: string) => {
+        setLoading(true);
+        setError(null);
+        try {
+            const func = httpsCallable(functions, 'getDeviceAccessDetails');
+            const result = await func({ deviceId });
+            return { success: true, data: result.data };
+        } catch (err: any) {
+            setError(err.message);
+            return { success: false, error: err.message };
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const transferDeviceToTenant = async (deviceId: string, newTenantId: string) => {
+        setLoading(true);
+        setError(null);
+        try {
+            const func = httpsCallable(functions, 'transferDeviceToTenant');
+            await func({ deviceId, newTenantId });
+            return { success: true };
+        } catch (err: any) {
+            setError(err.message);
+            return { success: false, error: err.message };
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const getUserDeviceAccess = async (userEmailOrId: string) => {
+        setLoading(true);
+        setError(null);
+        try {
+            const func = httpsCallable(functions, 'getUserDeviceAccess');
+            const result = await func({ userEmailOrId });
+            return { success: true, data: result.data };
+        } catch (err: any) {
+            setError(err.message);
+            return { success: false, error: err.message };
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const revokeUserDeviceAccess = async (userId: string, deviceId: string) => {
+        setLoading(true);
+        setError(null);
+        try {
+            const func = httpsCallable(functions, 'revokeUserDeviceAccess');
+            await func({ userId, deviceId });
+            return { success: true };
+        } catch (err: any) {
+            setError(err.message);
+            return { success: false, error: err.message };
+        } finally {
+            setLoading(false);
+        }
+    };
+
     return {
         setTenantStatus,
         setDeviceGlobalStatus,
         assignSubscriptionPlan,
         updatePlatformConfig,
         setUserActiveStatus,
+        getDeviceAccessDetails,
+        transferDeviceToTenant,
+        getUserDeviceAccess,
+        revokeUserDeviceAccess,
         loading,
         error
     };

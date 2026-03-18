@@ -1063,6 +1063,302 @@ export const getDeviceToken = functions.https.onRequest(
     }
 );
 
+// ========================================
+// SUPER ADMIN: Get Device Access Details
+// ========================================
+export const getDeviceAccessDetails = functions.https.onCall(async (data: { deviceId: string }, context) => {
+    // 1. Authenticate & Verify Super Admin
+    if (!context.auth || context.auth.token.role !== 'super_admin') {
+        throw new functions.https.HttpsError('permission-denied', 'Super Admin privileges required');
+    }
+
+    const { deviceId } = data;
+    if (!deviceId) {
+        throw new functions.https.HttpsError('invalid-argument', 'Missing deviceId');
+    }
+
+    try {
+        // Get device from global registry
+        const globalDevSnap = await db.collection('global_devices').doc(deviceId).get();
+        if (!globalDevSnap.exists) {
+            throw new functions.https.HttpsError('not-found', 'Device not found');
+        }
+
+        const globalDev = globalDevSnap.data();
+        const currentTenant = globalDev?.claimedBy || null;
+
+        // Get users with access (if device is claimed)
+        let users: any[] = [];
+        if (currentTenant) {
+            // Find device in tenant's devices collection
+            const tenantDevSnap = await db.collection('tenants').doc(currentTenant)
+                .collection('devices').doc(deviceId).get();
+
+            if (tenantDevSnap.exists) {
+                const assignedUsers = tenantDevSnap.data()?.assignedUsers || [];
+
+                // Get user details
+                if (assignedUsers.length > 0) {
+                    const userPromises = assignedUsers.map(async (userId: string) => {
+                        const userSnap = await db.collection('users').doc(userId).get();
+                        const memberSnap = await db.collection('tenants').doc(currentTenant)
+                            .collection('members').doc(userId).get();
+
+                        return {
+                            userId,
+                            email: userSnap.data()?.email || null,
+                            role: memberSnap.data()?.role || 'user'
+                        };
+                    });
+                    users = await Promise.all(userPromises);
+                }
+            }
+        }
+
+        return {
+            success: true,
+            data: {
+                deviceId,
+                model: globalDev?.model,
+                active: globalDev?.active !== false,
+                currentTenant,
+                createdAt: globalDev?.createdAt,
+                users
+            }
+        };
+    } catch (error: any) {
+        console.error('Error in getDeviceAccessDetails:', error);
+        if (error instanceof functions.https.HttpsError) throw error;
+        throw new functions.https.HttpsError('internal', 'Failed to fetch device details');
+    }
+});
+
+// ========================================
+// SUPER ADMIN: Transfer Device to Another Tenant
+// ========================================
+export const transferDeviceToTenant = functions.https.onCall(async (data: { deviceId: string, newTenantId: string }, context) => {
+    // 1. Authenticate & Verify Super Admin
+    if (!context.auth || context.auth.token.role !== 'super_admin') {
+        throw new functions.https.HttpsError('permission-denied', 'Super Admin privileges required');
+    }
+
+    const { deviceId, newTenantId } = data;
+    if (!deviceId || !newTenantId) {
+        throw new functions.https.HttpsError('invalid-argument', 'Missing required fields');
+    }
+
+    try {
+        await db.runTransaction(async (tx) => {
+            // 1. Verify new tenant exists
+            const newTenantSnap = await tx.get(db.collection('tenants').doc(newTenantId));
+            if (!newTenantSnap.exists) {
+                throw new functions.https.HttpsError('not-found', 'Target tenant not found');
+            }
+
+            // 2. Get device from global registry
+            const globalDevRef = db.collection('global_devices').doc(deviceId);
+            const globalDevSnap = await tx.get(globalDevRef);
+
+            if (!globalDevSnap.exists) {
+                throw new functions.https.HttpsError('not-found', 'Device not found');
+            }
+
+            const globalDev = globalDevSnap.data();
+            const oldTenantId = globalDev?.claimedBy;
+
+            // 3. Remove from old tenant (if claimed)
+            if (oldTenantId) {
+                const oldDeviceRef = db.collection('tenants').doc(oldTenantId).collection('devices').doc(deviceId);
+                tx.delete(oldDeviceRef);
+
+                // Remove all device_users mappings
+                const mappingsSnap = await db.collection('tenants').doc(oldTenantId)
+                    .collection('device_users').where('deviceId', '==', deviceId).get();
+                mappingsSnap.forEach(doc => tx.delete(doc.ref));
+            }
+
+            // 4. Update global registry
+            tx.update(globalDevRef, {
+                claimedBy: newTenantId,
+                transferredAt: admin.firestore.FieldValue.serverTimestamp(),
+                transferredBy: context.auth!.uid
+            });
+
+            // 5. Add to new tenant
+            const newDeviceRef = db.collection('tenants').doc(newTenantId).collection('devices').doc(deviceId);
+            tx.set(newDeviceRef, {
+                name: globalDev?.name || 'Transferred Device',
+                type: globalDev?.model || 'Unknown',
+                metadata: { hardwareRev: '1.0', firmwareVersion: '0.0.1' },
+                config: {},
+                switchNames: globalDev?.switchNames || ['Switch 1', 'Switch 2', 'Switch 3', 'Switch 4'],
+                status: 'OFFLINE',
+                assignedUsers: [], // No users initially
+                registeredAt: new Date(),
+                transferredFrom: oldTenantId || null
+            });
+        });
+
+        await logAuditAction(context, 'TRANSFER_DEVICE', deviceId, { newTenantId });
+
+        return { success: true };
+    } catch (error: any) {
+        console.error('Error in transferDeviceToTenant:', error);
+        if (error instanceof functions.https.HttpsError) throw error;
+        throw new functions.https.HttpsError('internal', 'Failed to transfer device');
+    }
+});
+
+// ========================================
+// SUPER ADMIN: Get User Device Access
+// ========================================
+export const getUserDeviceAccess = functions.https.onCall(async (data: { userEmailOrId: string }, context) => {
+    // 1. Authenticate & Verify Super Admin
+    if (!context.auth || context.auth.token.role !== 'super_admin') {
+        throw new functions.https.HttpsError('permission-denied', 'Super Admin privileges required');
+    }
+
+    const { userEmailOrId } = data;
+    if (!userEmailOrId) {
+        throw new functions.https.HttpsError('invalid-argument', 'Missing user identifier');
+    }
+
+    try {
+        // Find user by email or ID
+        let userId: string | null = null;
+        let userEmail: string | null = null;
+
+        // Try as email first
+        if (userEmailOrId.includes('@')) {
+            const userRecord = await admin.auth().getUserByEmail(userEmailOrId);
+            userId = userRecord.uid;
+            userEmail = userRecord.email || null;
+        } else {
+            // Try as UID
+            const userRecord = await admin.auth().getUser(userEmailOrId);
+            userId = userRecord.uid;
+            userEmail = userRecord.email || null;
+        }
+
+        if (!userId) {
+            throw new functions.https.HttpsError('not-found', 'User not found');
+        }
+
+        // Get user profile
+        const userSnap = await db.collection('users').doc(userId).get();
+        const userData = userSnap.data();
+        const tenantId = userData?.tenantId || userData?.currentTenantId;
+
+        if (!tenantId) {
+            return {
+                success: true,
+                data: {
+                    userId,
+                    email: userEmail,
+                    tenantId: null,
+                    role: null,
+                    active: false,
+                    devices: []
+                }
+            };
+        }
+
+        // Get user role
+        const memberSnap = await db.collection('tenants').doc(tenantId).collection('members').doc(userId).get();
+        const role = memberSnap.data()?.role || 'user';
+
+        // Get all devices user has access to
+        const mappingsSnap = await db.collection('tenants').doc(tenantId)
+            .collection('device_users').where('userId', '==', userId).get();
+
+        const deviceIds = mappingsSnap.docs.map(doc => doc.data().deviceId);
+
+        const devices: any[] = [];
+        if (deviceIds.length > 0) {
+            const devicePromises = deviceIds.map(async (deviceId: string) => {
+                const devSnap = await db.collection('tenants').doc(tenantId).collection('devices').doc(deviceId).get();
+                if (devSnap.exists) {
+                    const devData = devSnap.data();
+                    return {
+                        deviceId,
+                        deviceName: devData?.name,
+                        model: devData?.type,
+                        active: devData?.active !== false
+                    };
+                }
+                return null;
+            });
+            const devicesResult = await Promise.all(devicePromises);
+            devices.push(...devicesResult.filter(d => d !== null));
+        }
+
+        return {
+            success: true,
+            data: {
+                userId,
+                email: userEmail,
+                tenantId,
+                role,
+                active: userData?.active !== false,
+                devices
+            }
+        };
+    } catch (error: any) {
+        console.error('Error in getUserDeviceAccess:', error);
+        if (error instanceof functions.https.HttpsError) throw error;
+        throw new functions.https.HttpsError('internal', 'Failed to fetch user access');
+    }
+});
+
+// ========================================
+// SUPER ADMIN: Revoke User Device Access (Emergency Override)
+// ========================================
+export const revokeUserDeviceAccess = functions.https.onCall(async (data: { userId: string, deviceId: string }, context) => {
+    // 1. Authenticate & Verify Super Admin
+    if (!context.auth || context.auth.token.role !== 'super_admin') {
+        throw new functions.https.HttpsError('permission-denied', 'Super Admin privileges required');
+    }
+
+    const { userId, deviceId } = data;
+    if (!userId || !deviceId) {
+        throw new functions.https.HttpsError('invalid-argument', 'Missing required fields');
+    }
+
+    try {
+        // Get user's tenant
+        const userSnap = await db.collection('users').doc(userId).get();
+        const tenantId = userSnap.data()?.tenantId || userSnap.data()?.currentTenantId;
+
+        if (!tenantId) {
+            throw new functions.https.HttpsError('not-found', 'User has no tenant');
+        }
+
+        await db.runTransaction(async (tx) => {
+            const deviceRef = db.collection('tenants').doc(tenantId).collection('devices').doc(deviceId);
+            const mappingRef = db.collection('tenants').doc(tenantId).collection('device_users').doc(`${deviceId}_${userId}`);
+
+            const deviceSnap = await tx.get(deviceRef);
+            if (!deviceSnap.exists) {
+                throw new functions.https.HttpsError('not-found', 'Device not found in user\'s tenant');
+            }
+
+            // Revoke access
+            tx.update(deviceRef, {
+                assignedUsers: admin.firestore.FieldValue.arrayRemove(userId)
+            });
+            tx.delete(mappingRef);
+        });
+
+        await logAuditAction(context, 'SUPER_ADMIN_REVOKE_ACCESS', deviceId, { userId, reason: 'Emergency override' });
+
+        return { success: true };
+    } catch (error: any) {
+        console.error('Error in revokeUserDeviceAccess:', error);
+        if (error instanceof functions.https.HttpsError) throw error;
+        throw new functions.https.HttpsError('internal', 'Failed to revoke access');
+    }
+});
+
 export const resetDeviceHardware = functions.https.onCall(async (data: { deviceId: string }, context) => {
     // 1. Authenticate & Verify Role (Admin only)
     if (!context.auth) {

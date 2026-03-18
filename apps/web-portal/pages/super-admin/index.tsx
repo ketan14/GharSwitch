@@ -5,6 +5,8 @@ import TenantManagement from '../../components/TenantManagement';
 import PlatformSettings from '../../components/PlatformSettings';
 import GlobalDeviceManagement from '../../components/GlobalDeviceManagement';
 import UserManagement from '../../components/UserManagement';
+import SuperAdminDeviceAssignment from '../../components/SuperAdminDeviceAssignment';
+import SuperAdminUserDeviceView from '../../components/SuperAdminUserDeviceView';
 import { useRouter } from 'next/router';
 
 export default function SuperAdminPage() {
@@ -67,6 +69,18 @@ export default function SuperAdminPage() {
 
         <div className="admin-full-row">
           <UserManagement />
+        </div>
+
+        {/* New User-Device Management Section */}
+        <div className="admin-full-row">
+          <div className="section-header">
+            <h2>User-Device Management</h2>
+            <p>Advanced tools for device transfer and emergency access control</p>
+          </div>
+          <div className="device-management-grid">
+            <SuperAdminDeviceAssignment />
+            <SuperAdminUserDeviceView />
+          </div>
         </div>
       </main>
 
@@ -171,6 +185,33 @@ export default function SuperAdminPage() {
           margin-top: 24px;
         }
 
+        .section-header {
+          background: white;
+          border-radius: 12px;
+          padding: 20px 24px;
+          margin-bottom: 16px;
+          box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .section-header h2 {
+          margin: 0 0 4px 0;
+          font-size: 18px;
+          color: #1f2937;
+        }
+
+        .section-header p {
+          margin: 0;
+          font-size: 14px;
+          color: #6b7280;
+        }
+
+        .device-management-grid {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 24px;
+          align-items: start;
+        }
+
         .section {
           background: white;
           border-radius: 12px;
@@ -222,6 +263,10 @@ export default function SuperAdminPage() {
 
         @media (max-width: 768px) {
           .admin-grid {
+            grid-template-columns: 1fr;
+          }
+
+          .device-management-grid {
             grid-template-columns: 1fr;
           }
         }
