@@ -49,3 +49,65 @@ export interface DeviceStatus {
     lastSeen: number;
     ip: string;
 }
+
+// Hub & Third-Party Integrations
+export interface HubProvider {
+    type: 'ATOMBERG' | 'ESP32' | 'TUYA' | 'MATTER';
+}
+
+export interface AtombergHub {
+    id: string;
+    nickname: string;
+    type: 'ATOMBERG';
+    apiKeyEncrypted: string;
+    refreshTokenEncrypted: string;
+    accessToken?: string;
+    expiresAt?: any; // Timestamp
+    isActive: boolean;
+    createdAt: any;
+    updatedAt: any;
+    metadata?: {
+        totalDevices?: number;
+    };
+}
+
+export interface FanDevice {
+    id: string;
+    hubId: string;
+    atombergDeviceId: string;
+    provider: 'ATOMBERG';
+    type: 'FAN';
+    name: string;
+    room?: string;
+    online: boolean;
+    lastSeenAt?: any;
+    capabilities: {
+        powerControl: boolean;
+        speedControl: boolean;
+    };
+    createdAt: any;
+    updatedAt: any;
+}
+
+export interface FanDeviceState {
+    power: boolean;
+    speed: 1 | 2 | 3 | 4 | 5 | 6;
+    syncStatus: 'SYNCED' | 'PENDING' | 'FAILED';
+    source: 'USER' | 'SYNC' | 'AUTOMATION';
+    updatedAt: any;
+}
+
+export interface CommandQueueItem {
+    id?: string;
+    deviceId: string;
+    hubId: string;
+    provider: 'ATOMBERG';
+    payload: {
+        power?: boolean;
+        speed?: number;
+    };
+    status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED';
+    createdAt: any;
+    updatedAt: any;
+    error?: string;
+}

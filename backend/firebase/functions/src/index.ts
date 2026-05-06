@@ -1404,3 +1404,9 @@ export const resetDeviceHardware = functions.https.onCall(async (data: { deviceI
         throw new functions.https.HttpsError('internal', "Failed to reset hardware lock");
     }
 });
+
+// ========================================
+// 8. ATOMBERG INTEGRATION
+// ========================================
+export * from './atomberg/api/routes';
+export * from './commands/queueProcessor';
