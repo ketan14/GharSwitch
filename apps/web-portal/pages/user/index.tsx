@@ -3,6 +3,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useDevices } from '../../hooks/useDevices';
 import DeviceCard from '../../components/DeviceCard';
 import { useRouter } from 'next/router';
+import Link from 'next/link';
 
 export default function UserDashboard() {
   const { user, role, loading, signOut } = useAuth();
@@ -50,14 +51,26 @@ export default function UserDashboard() {
     <div className="dashboard-page">
       <header className="header">
         <div className="header-content">
-          <h1>GharSwitch Pro</h1>
+          <div className="nav-brand">
+            <Link href="/user"><h1>GharSwitch Pro</h1></Link>
+            <nav className="navbar">
+              <Link href="/user" className="nav-link active">Global Devices</Link>
+              <div className="dropdown">
+                <span className="nav-link">Private Devices ▾</span>
+                <div className="dropdown-content">
+                  <Link href="/user/private-devices">Show Private Devices</Link> <br></br>
+                  <Link href="/user/private-devices/add">Add Private Device</Link>
+                </div>
+              </div>
+            </nav>
+          </div>
           <div className="user-info">
             <span className="user-email">{user.email}</span>
             <span className={`role-badge ${role?.toLowerCase()}`}>{role?.replace('_', ' ')}</span>
             <button onClick={signOut} className="logout-btn">Logout</button>
           </div>
-        </div>
-      </header>
+        </div >
+      </header >
 
       <main className="main-content">
         <header className="page-header">
@@ -113,7 +126,31 @@ export default function UserDashboard() {
           align-items: center;
         }
 
-        .header h1 {
+        .nav-brand { display: flex; align-items: center; gap: 32px; }
+        .nav-brand h1 {
+          margin: 0;
+          font-size: 20px;
+          font-weight: 700;
+          color: #1a1a1a;
+          background: linear-gradient(135deg, #3498db, #2980b9);
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+          cursor: pointer;
+        }
+
+        .navbar { display: flex; gap: 24px; align-items: center; }
+        .nav-link { text-decoration: none; color: #4a5568; font-weight: 500; font-size: 15px; transition: color 0.2s; cursor: pointer; }
+        .nav-link:hover, .nav-link.active { color: #3182ce; }
+        
+        .dropdown { position: relative; display: inline-block; }
+        .dropdown::after { content: ''; position: absolute; bottom: -10px; left: 0; width: 100%; height: 10px; }
+        .dropdown-content {
+            display: none; position: absolute; background-color: white; min-width: 200px;
+            box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.1); z-index: 1; border-radius: 8px; margin-top: 8px; overflow: hidden; top: 100%;
+        }
+        .dropdown:hover .dropdown-content { display: block; }
+        .dropdown-content a { color: #4a5568; padding: 12px 16px; text-decoration: none; display: block; font-size: 14px; }
+        .dropdown-content a:hover { background-color: #f7fafc; color: #3182ce; }
           margin: 0;
           font-size: 20px;
           font-weight: 700;
@@ -233,6 +270,6 @@ export default function UserDashboard() {
           color: #6c757d;
         }
       `}</style>
-    </div>
+    </div >
   );
 }

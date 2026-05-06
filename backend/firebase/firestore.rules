@@ -91,6 +91,32 @@ service cloud.firestore {
       allow read, write: if isAuthenticated() && request.auth.uid == uid;
       // Super Admin can read all users (ReadOnly)
       allow read: if isAuthenticated() && isSuperAdmin();
+
+      // Atomberg Hubs
+      match /hubs/{hubId} {
+        allow read: if isAuthenticated() && request.auth.uid == uid;
+        // Block client-side writes to encrypted fields
+        allow update: if isAuthenticated() && request.auth.uid == uid 
+                      && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['apiKeyEncrypted', 'refreshTokenEncrypted', 'accessToken']));
+        allow create, delete: if false; // Must use Cloud Functions
+      }
+
+      // User Devices (Atomberg/Others)
+      match /devices/{deviceId} {
+        allow read: if isAuthenticated() && request.auth.uid == uid;
+        allow update: if isAuthenticated() && request.auth.uid == uid;
+        allow create, delete: if false;
+        
+        match /state/{stateId} {
+          allow read, write: if isAuthenticated() && request.auth.uid == uid;
+        }
+      }
+
+      // Command Queue
+      match /commands/{commandId} {
+        allow read, create: if isAuthenticated() && request.auth.uid == uid;
+        allow update, delete: if false; // Processed by Cloud Functions
+      }
     }
 
     // ========================================
