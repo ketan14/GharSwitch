@@ -140,3 +140,5 @@ export interface RegisterDeviceResponse {
     success: boolean;
     device: Device;
 }
+
+export { AtombergHub, FanDevice, FanDeviceState, CommandQueueItem, HubProvider } from './device';

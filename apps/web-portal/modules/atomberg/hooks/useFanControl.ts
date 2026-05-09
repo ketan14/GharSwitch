@@ -1,15 +1,15 @@
 import { useEffect, useState } from 'react';
 import { doc, onSnapshot, getFirestore } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
-import { useAtombergStore } from '../store/useAtombergStore';
+import { useAtombergStore, AtombergStore } from '../store/useAtombergStore';
 import { AtombergApi } from '../api/client';
 import { FanDeviceState } from '@ghar-switch/domain-types';
 
 export const useFanControl = (hubId: string, deviceId: string) => {
     const db = getFirestore();
     const auth = getAuth();
-    const setOptimisticState = useAtombergStore((state) => state.setOptimisticState);
-    const optimisticState = useAtombergStore((state) => state.optimisticStates[deviceId]);
+    const setOptimisticState = useAtombergStore((state: AtombergStore) => state.setOptimisticState);
+    const optimisticState = useAtombergStore((state: AtombergStore) => state.optimisticStates[deviceId]);
 
     const [realState, setRealState] = useState<FanDeviceState | null>(null);
     const [loading, setLoading] = useState(true);

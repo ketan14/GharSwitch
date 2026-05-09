@@ -6,6 +6,9 @@ const nextConfig = {
     transpilePackages: ["@ghar-switch/domain-types", "@ghar-switch/constants"],
     output: 'standalone',
     experimental: {
+        turbopack: {
+            root: "../../",
+        },
     }
 };
 

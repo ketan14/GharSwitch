@@ -4,7 +4,6 @@ import { decrypt, encrypt } from '../utils/encryption';
 import { AtombergApiClient } from './atombergApi';
 
 // Ensure admin is initialized in index.ts
-const db = admin.firestore();
 
 export class TokenService {
     /**
@@ -12,7 +11,7 @@ export class TokenService {
      * it refreshes the token safely using a Firestore distributed lock.
      */
     static async getValidAccessToken(uid: string, hubId: string): Promise<string> {
-        const hubRef = db.collection(`users/${uid}/hubs`).doc(hubId);
+        const hubRef = admin.firestore().collection(`users/${uid}/hubs`).doc(hubId);
 
         // 1. Check current token
         const hubDoc = await hubRef.get();
@@ -28,9 +27,9 @@ export class TokenService {
         }
 
         // 2. Token is missing or expiring soon. Acquire Refresh Lock.
-        const lockRef = db.collection('locks').doc(`atomberg_${hubId}`);
+        const lockRef = admin.firestore().collection('locks').doc(`atomberg_${hubId}`);
 
-        return await db.runTransaction(async (transaction) => {
+        return await admin.firestore().runTransaction(async (transaction) => {
             const lockDoc = await transaction.get(lockRef);
 
             // If lock exists and was acquired less than 30 seconds ago, another process is refreshing.

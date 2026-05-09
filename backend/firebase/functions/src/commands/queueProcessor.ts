@@ -1,18 +1,18 @@
-import * as functions from 'firebase-functions/v2';
+import { logger } from 'firebase-functions/v2';
+import { onDocumentCreated } from 'firebase-functions/v2/firestore';
 import * as admin from 'firebase-admin';
 import { TokenService } from '../atomberg/services/tokenService';
 import { AtombergApiClient } from '../atomberg/services/atombergApi';
 
-const db = admin.firestore();
 
-export const processCommandQueue = functions.firestore.onDocumentCreated(
-    'users/{uid}/commands/{commandId}',
-    async (event) => {
-        const snapshot = event.data;
-        if (!snapshot) return;
 
-        const command = snapshot.data();
-        const { uid, commandId } = event.params;
+export const processCommandQueue = onDocumentCreated('users/{uid}/commands/{commandId}', async (event) => {
+    if (!event.data) return;
+    
+    const { uid, commandId } = event.params;
+    const command = event.data.data();
+
+    if (!command) return;
 
         if (command.provider !== 'ATOMBERG') {
             // Not for us
@@ -23,10 +23,10 @@ export const processCommandQueue = functions.firestore.onDocumentCreated(
         
         try {
             // 1. Update queue status to PROCESSING
-            await snapshot.ref.update({ status: 'PROCESSING', updatedAt: admin.firestore.FieldValue.serverTimestamp() });
+            await event.data.ref.update({ status: 'PROCESSING', updatedAt: admin.firestore.FieldValue.serverTimestamp() });
 
             // 2. Get Device details
-            const deviceRef = db.doc(`users/${uid}/devices/${deviceId}`);
+            const deviceRef = admin.firestore().doc(`users/${uid}/devices/${deviceId}`);
             const deviceDoc = await deviceRef.get();
             if (!deviceDoc.exists) throw new Error('Device not found');
             const atombergDeviceId = deviceDoc.data()?.atombergDeviceId;
@@ -46,21 +46,21 @@ export const processCommandQueue = functions.firestore.onDocumentCreated(
             });
 
             // 6. Update Queue status to COMPLETED
-            await snapshot.ref.update({ status: 'COMPLETED', updatedAt: admin.firestore.FieldValue.serverTimestamp() });
+            await event.data.ref.update({ status: 'COMPLETED', updatedAt: admin.firestore.FieldValue.serverTimestamp() });
             
             // Optionally, delete the command to save space
-            // await snapshot.ref.delete();
+            // await event.data.ref.delete();
 
         } catch (error) {
-            console.error(`Command ${commandId} Failed:`, error);
+            logger.error(`Command ${commandId} Failed:`, error);
             
             // Revert state to FAILED
-            await db.doc(`users/${uid}/devices/${deviceId}/state/current`).update({
+            await admin.firestore().doc(`users/${uid}/devices/${deviceId}/state/current`).update({
                 syncStatus: 'FAILED',
                 updatedAt: admin.firestore.FieldValue.serverTimestamp()
             });
 
-            await snapshot.ref.update({ 
+            await event.data.ref.update({ 
                 status: 'FAILED', 
                 error: error instanceof Error ? error.message : 'Unknown error',
                 updatedAt: admin.firestore.FieldValue.serverTimestamp() 

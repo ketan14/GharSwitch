@@ -1,6 +1,11 @@
 {
     "extends": "../../../tsconfig.base.json",
     "compilerOptions": {
+        "baseUrl": ".",
+        "paths": {
+            "@ghar-switch/domain-types": ["../../../packages/domain-types/src"],
+            "@ghar-switch/constants": ["../../../packages/constants/src"]
+        },
         "module": "commonjs",
         "moduleResolution": "node",
         "noImplicitReturns": true,

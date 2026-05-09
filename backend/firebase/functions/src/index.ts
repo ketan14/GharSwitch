@@ -1,6 +1,17 @@
-import * as functions from 'firebase-functions';
-import { onCall, HttpsError } from 'firebase-functions/v2/https';
+import { setGlobalOptions, logger } from 'firebase-functions/v2';
+import { onCall, HttpsError, onRequest, Request, Response } from 'firebase-functions/v2/https';
+import { onValueUpdated } from 'firebase-functions/v2/database';
+import { onDocumentCreated, onDocumentUpdated, onDocumentWritten } from 'firebase-functions/v2/firestore';
 import * as admin from 'firebase-admin';
+
+admin.initializeApp();
+
+// Configure 2nd Gen Globals
+setGlobalOptions({
+    maxInstances: 10,
+    concurrency: 80,
+    region: 'us-central1'
+});
 //import * as crypto from "crypto";
 // ========================================
 // TYPE DEFINITIONS (Inline)
@@ -112,7 +123,6 @@ export interface Device {
 
 export type GetDeviceTokenRequest = { deviceId?: string; timestamp?: number; signature?: string; };
 
-admin.initializeApp();
 const db = admin.firestore();
 const rtdb = admin.database();
 
@@ -185,7 +195,7 @@ async function recalculateUserSummary(userId: string) {
         }, { merge: true });
 
     } catch (err) {
-        console.error(`Error recalculating summary for ${userId}:`, err);
+        logger.error(`Error recalculating summary for ${userId}:`, err);
     }
 }
 
@@ -199,6 +209,7 @@ export const sendCommand = onCall({ cors: true }, async (request) => {
     }
 
     const caller = request.auth;
+    const data = request.data as SendCommandRequest;
     const tenantId = caller.token.tenantId as string;
 
     if (!tenantId) {
@@ -206,7 +217,7 @@ export const sendCommand = onCall({ cors: true }, async (request) => {
     }
 
     // 2. Validate Payload
-    const { deviceId, action, target } = request.data as SendCommandRequest;
+    const { deviceId, action, target } = data;
     if (!deviceId || typeof action !== 'boolean' || !target) {
         throw new HttpsError('invalid-argument', 'Invalid payload');
     }
@@ -269,7 +280,7 @@ export const sendCommand = onCall({ cors: true }, async (request) => {
 
         return { success: true, commandId: cmdId };
     } catch (error: any) {
-        console.error('Error in sendCommand:', error);
+        logger.error('Error in sendCommand:', error);
         if (error instanceof HttpsError) throw error;
         throw new HttpsError('internal', error.message || 'Failed to send command');
     }
@@ -278,20 +289,22 @@ export const sendCommand = onCall({ cors: true }, async (request) => {
 // ========================================
 // 2. CREATE TENANT (Super Admin Only)
 // ========================================
-export const createTenant = functions.https.onCall(async (data: {
-    tenantName: string;
-    adminEmail: string;
-    adminPassword: string;
-    tier?: 'BASIC' | 'PRO';
-}, context) => {
+export const createTenant = onCall({ cors: true }, async (request) => {
+    const data = request.data as {
+        tenantName: string;
+        adminEmail: string;
+        adminPassword: string;
+        tier?: 'BASIC' | 'PRO';
+    };
+    const context = request;
     // Only super admins can create tenants
     if (!context.auth || context.auth.token.role !== 'super_admin') {
-        throw new functions.https.HttpsError('permission-denied', 'Only super admins can create tenants');
+        throw new HttpsError('permission-denied', 'Only super admins can create tenants');
     }
 
     const { tenantName, adminEmail, adminPassword, tier = 'BASIC' } = data;
     if (!tenantName || !adminEmail || !adminPassword) {
-        throw new functions.https.HttpsError('invalid-argument', 'Missing required fields');
+        throw new HttpsError('invalid-argument', 'Missing required fields');
     }
 
     try {
@@ -322,23 +335,25 @@ export const createTenant = functions.https.onCall(async (data: {
 
         return { success: true, ...result, message: 'Tenant created successfully' };
     } catch (error: any) {
-        console.error('Error creating tenant:', error);
-        throw new functions.https.HttpsError('internal', error.message || 'Failed to create tenant');
+        logger.error('Error creating tenant:', error);
+        throw new HttpsError('internal', error.message || 'Failed to create tenant');
     }
 });
 
 // ========================================
 // 3. SET TENANT STATUS (Super Admin Only)
 // ========================================
-export const setTenantStatus = functions.https.onCall(async (data: SetTenantStatusRequest, context) => {
+export const setTenantStatus = onCall({ cors: true }, async (request) => {
+    const data = request.data as SetTenantStatusRequest;
+    const context = request;
     // 1. Authenticate & Verify Super Admin
     if (!context.auth || context.auth.token.role !== 'super_admin') {
-        throw new functions.https.HttpsError('permission-denied', 'Super Admin privileges required');
+        throw new HttpsError('permission-denied', 'Super Admin privileges required');
     }
 
     const { tenantId, active, suspendedReason } = data;
     if (!tenantId || typeof active !== 'boolean') {
-        throw new functions.https.HttpsError('invalid-argument', 'Invalid payload');
+        throw new HttpsError('invalid-argument', 'Invalid payload');
     }
 
     try {
@@ -351,23 +366,25 @@ export const setTenantStatus = functions.https.onCall(async (data: SetTenantStat
 
         return { success: true };
     } catch (error: any) {
-        console.error('Error in setTenantStatus:', error);
-        throw new functions.https.HttpsError('internal', 'Failed to update tenant status');
+        logger.error('Error in setTenantStatus:', error);
+        throw new HttpsError('internal', 'Failed to update tenant status');
     }
 });
 
 // ========================================
 // 4. SET DEVICE GLOBAL STATUS (Super Admin Only)
 // ========================================
-export const setDeviceGlobalStatus = functions.https.onCall(async (data: SetDeviceGlobalStatusRequest, context) => {
+export const setDeviceGlobalStatus = onCall({ cors: true }, async (request) => {
+    const data = request.data as SetDeviceGlobalStatusRequest;
+    const context = request;
     // 1. Authenticate & Verify Super Admin
     if (!context.auth || context.auth.token.role !== 'super_admin') {
-        throw new functions.https.HttpsError('permission-denied', 'Super Admin privileges required');
+        throw new HttpsError('permission-denied', 'Super Admin privileges required');
     }
 
     const { deviceId, active } = data;
     if (!deviceId || typeof active !== 'boolean') {
-        throw new functions.https.HttpsError('invalid-argument', 'Invalid payload');
+        throw new HttpsError('invalid-argument', 'Invalid payload');
     }
 
     try {
@@ -386,23 +403,25 @@ export const setDeviceGlobalStatus = functions.https.onCall(async (data: SetDevi
 
         return { success: true };
     } catch (error: any) {
-        console.error('Error in setDeviceGlobalStatus:', error);
-        throw new functions.https.HttpsError('internal', 'Failed to update device status');
+        logger.error('Error in setDeviceGlobalStatus:', error);
+        throw new HttpsError('internal', 'Failed to update device status');
     }
 });
 
 // ========================================
 // 5. ASSIGN SUBSCRIPTION PLAN (Super Admin Only)
 // ========================================
-export const assignSubscriptionPlan = functions.https.onCall(async (data: AssignSubscriptionPlanRequest, context) => {
+export const assignSubscriptionPlan = onCall({ cors: true }, async (request) => {
+    const data = request.data as AssignSubscriptionPlanRequest;
+    const context = request;
     // 1. Authenticate & Verify Super Admin
     if (!context.auth || context.auth.token.role !== 'super_admin') {
-        throw new functions.https.HttpsError('permission-denied', 'Super Admin privileges required');
+        throw new HttpsError('permission-denied', 'Super Admin privileges required');
     }
 
     const { tenantId, plan } = data;
     if (!tenantId || !plan) {
-        throw new functions.https.HttpsError('invalid-argument', 'Invalid payload');
+        throw new HttpsError('invalid-argument', 'Invalid payload');
     }
 
     const planConfigs: Record<string, any> = {
@@ -412,7 +431,7 @@ export const assignSubscriptionPlan = functions.https.onCall(async (data: Assign
     };
 
     if (!planConfigs[plan]) {
-        throw new functions.https.HttpsError('invalid-argument', 'Invalid plan type');
+        throw new HttpsError('invalid-argument', 'Invalid plan type');
     }
 
     try {
@@ -425,17 +444,19 @@ export const assignSubscriptionPlan = functions.https.onCall(async (data: Assign
 
         return { success: true };
     } catch (error: any) {
-        console.error('Error in assignSubscriptionPlan:', error);
-        throw new functions.https.HttpsError('internal', 'Failed to assign plan');
+        logger.error('Error in assignSubscriptionPlan:', error);
+        throw new HttpsError('internal', 'Failed to assign plan');
     }
 });
 
 // ========================================
 // 6. REGISTER DEVICE (Callable)
 // ========================================
-export const registerDevice = functions.https.onCall(async (data: RegisterDeviceRequest, context) => {
+export const registerDevice = onCall({ cors: true }, async (request) => {
+    const data = request.data as RegisterDeviceRequest;
+    const context = request;
     if (!context.auth) {
-        throw new functions.https.HttpsError('unauthenticated', 'Login required');
+        throw new HttpsError('unauthenticated', 'Login required');
     }
 
     const tenantId = context.auth.token.tenantId as string;
@@ -443,11 +464,11 @@ export const registerDevice = functions.https.onCall(async (data: RegisterDevice
     const { deviceId, claimCode } = data;
 
     if (role !== 'tenant_admin' && role !== 'super_admin' && role !== 'admin') {
-        throw new functions.https.HttpsError('permission-denied', 'Only admins can register devices');
+        throw new HttpsError('permission-denied', 'Only admins can register devices');
     }
 
     if (!tenantId || !deviceId || !claimCode) {
-        throw new functions.https.HttpsError('invalid-argument', 'Missing required fields');
+        throw new HttpsError('invalid-argument', 'Missing required fields');
     }
 
     const result = await db.runTransaction(async (tx) => {
@@ -455,29 +476,29 @@ export const registerDevice = functions.https.onCall(async (data: RegisterDevice
         const globalDevSnap = await tx.get(globalDevRef);
 
         if (!globalDevSnap.exists) {
-            throw new functions.https.HttpsError('not-found', 'Invalid Hardware');
+            throw new HttpsError('not-found', 'Invalid Hardware');
         }
         const globalDev = globalDevSnap.data() as GlobalDevice;
         if (globalDev.secretHash !== claimCode) {
-            throw new functions.https.HttpsError('permission-denied', 'Invalid claim code');
+            throw new HttpsError('permission-denied', 'Invalid claim code');
         }
 
         if (globalDev.claimedBy) {
-            throw new functions.https.HttpsError('already-exists', 'Device already claimed');
+            throw new HttpsError('already-exists', 'Device already claimed');
         }
 
         const tenantRef = db.collection('tenants').doc(tenantId);
         const tenantSnap = await tx.get(tenantRef);
 
         if (!tenantSnap.exists) {
-            throw new functions.https.HttpsError('not-found', 'Tenant not found');
+            throw new HttpsError('not-found', 'Tenant not found');
         }
 
         const tenant = tenantSnap.data() as Tenant;
         const devicesSnap = await db.collection('tenants').doc(tenantId).collection('devices').get();
 
         if (devicesSnap.size >= tenant.quota.maxDevices) {
-            throw new functions.https.HttpsError('resource-exhausted', 'Quota Exceeded');
+            throw new HttpsError('resource-exhausted', 'Quota Exceeded');
         }
 
         tx.update(globalDevRef, { claimedBy: tenantId });
@@ -508,9 +529,11 @@ export const registerDevice = functions.https.onCall(async (data: RegisterDevice
 // ========================================
 // 4. INVITE USER (Callable)
 // ========================================
-export const inviteUser = functions.https.onCall(async (data: InviteUserRequest, context) => {
+export const inviteUser = onCall({ cors: true }, async (request) => {
+    const data = request.data as InviteUserRequest;
+    const context = request;
     if (!context.auth) {
-        throw new functions.https.HttpsError('unauthenticated', 'Login required');
+        throw new HttpsError('unauthenticated', 'Login required');
     }
 
     const tenantId = context.auth.token.tenantId as string;
@@ -520,11 +543,11 @@ export const inviteUser = functions.https.onCall(async (data: InviteUserRequest,
     // 0. Authorization: Only admins can invite users
     // 0. Authorization: Tenant Admins AND standard Admins can invite users
     if (callerRole !== 'tenant_admin' && callerRole !== 'super_admin' && callerRole !== 'admin') {
-        throw new functions.https.HttpsError('permission-denied', 'Only admins can invite members');
+        throw new HttpsError('permission-denied', 'Only admins can invite members');
     }
 
     if (!tenantId || !email || !role) {
-        throw new functions.https.HttpsError('invalid-argument', 'Missing required fields');
+        throw new HttpsError('invalid-argument', 'Missing required fields');
     }
 
     try {
@@ -534,14 +557,14 @@ export const inviteUser = functions.https.onCall(async (data: InviteUserRequest,
             const tenantSnap = await tx.get(tenantRef);
 
             if (!tenantSnap.exists) {
-                throw new functions.https.HttpsError('not-found', 'Tenant not found');
+                throw new HttpsError('not-found', 'Tenant not found');
             }
 
             const tenant = tenantSnap.data() as Tenant;
             const membersSnap = await db.collection('tenants').doc(tenantId).collection('members').get();
 
             if (membersSnap.size >= tenant.quota.maxUsers) {
-                throw new functions.https.HttpsError('resource-exhausted', 'User quota exceeded');
+                throw new HttpsError('resource-exhausted', 'User quota exceeded');
             }
 
             // 2. Create User in Auth
@@ -577,42 +600,48 @@ export const inviteUser = functions.https.onCall(async (data: InviteUserRequest,
 
         return { success: true, ...result };
     } catch (error: any) {
-        console.error('Invite Error:', error);
+        logger.error('Invite Error:', error);
         if (error.code === 'auth/email-already-exists') {
-            throw new functions.https.HttpsError('already-exists', 'User already exists');
+            throw new HttpsError('already-exists', 'User already exists');
         }
-        throw new functions.https.HttpsError('internal', error.message || 'Failed to invite user');
+        throw new HttpsError('internal', error.message || 'Failed to invite user');
     }
 });
 
 
 // ========================================
-// 4. PRESENCE SYNC (RTDB Trigger)
+// 4. PRESENCE SYNC (RTDB Trigger V2)
 // ========================================
-export const syncPresence = functions.database.ref('/tenants/{tenantId}/presence/{deviceId}')
-    .onUpdate(async (change, context) => {
-        const isOnline = change.after.val()?.online || false;
-        const { tenantId, deviceId } = context.params;
+export const syncPresence = onValueUpdated({
+    ref: 'tenants/{tenantId}/presence/{deviceId}',
+    instance: 'gharswitch-default-rtdb',
+    region: 'asia-southeast1'
+}, async (event) => {
+    if (!event.data) return;
+    const isOnline = event.data.after.val()?.online || false;
+    const { tenantId, deviceId } = event.params;
 
-        await db.collection('tenants').doc(tenantId).collection('devices').doc(deviceId).update({
-            status: isOnline ? 'ONLINE' : 'OFFLINE',
-            lastSeen: admin.firestore.FieldValue.serverTimestamp()
-        });
+    await admin.firestore().collection('tenants').doc(tenantId).collection('devices').doc(deviceId).update({
+        status: isOnline ? 'ONLINE' : 'OFFLINE',
+        lastSeen: admin.firestore.FieldValue.serverTimestamp()
     });
+});
 
 // ========================================
-// 5. SET TENANT CLAIM (Trigger on Member Creation)
+// 5. SET TENANT CLAIM (Firestore Trigger V2)
 // ========================================
-export const setTenantClaim = functions.firestore.document('tenants/{tenantId}/members/{uid}')
-    .onCreate(async (snap, context) => {
-        const { tenantId, uid } = context.params;
-        const memberData = snap.data();
+export const setTenantClaim = onDocumentCreated('tenants/{tenantId}/members/{uid}', async (event) => {
+    if (!event.data) return;
+    const { tenantId, uid } = event.params;
+    const memberData = event.data.data();
 
-        await admin.auth().setCustomUserClaims(uid, {
-            tenantId: tenantId,
-            role: memberData.role
-        });
+    if (!memberData) return;
+
+    await admin.auth().setCustomUserClaims(uid, {
+        tenantId: tenantId,
+        role: memberData.role
     });
+});
 
 // ========================================
 // 7. MANAGE DEVICE TYPE (Super Admin Only)
@@ -620,20 +649,20 @@ export const setTenantClaim = functions.firestore.document('tenants/{tenantId}/m
 // ========================================
 // 7. ASSIGN DEVICE TO USER (Tenant Admin/Admin)
 // ========================================
-export const assignDeviceToUser = functions.https.onCall(async (data: { deviceId: string, userId: string, access: boolean }, context) => {
-    if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'Login required');
+export const assignDeviceToUser = onCall({ cors: true }, async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Login required');
 
-    const tenantId = context.auth.token.tenantId as string;
-    const role = context.auth.token.role as string;
-    const { deviceId, userId, access } = data;
+    const tenantId = request.auth.token.tenantId as string;
+    const role = request.auth.token.role as string;
+    const { deviceId, userId, access } = request.data as { deviceId: string, userId: string, access: boolean };
 
     // 1. Authorization
     if (role !== 'tenant_admin' && role !== 'super_admin' && role !== 'admin') {
-        throw new functions.https.HttpsError('permission-denied', 'Only admins can assign devices');
+        throw new HttpsError('permission-denied', 'Only admins can assign devices');
     }
 
     if (!tenantId || !deviceId || !userId) {
-        throw new functions.https.HttpsError('invalid-argument', 'Missing required fields');
+        throw new HttpsError('invalid-argument', 'Missing required fields');
     }
 
     try {
@@ -642,7 +671,7 @@ export const assignDeviceToUser = functions.https.onCall(async (data: { deviceId
             const mappingRef = db.collection('tenants').doc(tenantId).collection('device_users').doc(`${deviceId}_${userId}`);
 
             const deviceSnap = await tx.get(deviceRef);
-            if (!deviceSnap.exists) throw new functions.https.HttpsError('not-found', 'Device not found');
+            if (!deviceSnap.exists) throw new HttpsError('not-found', 'Device not found');
 
             // 2. Dual Write: Logic & Indexing
             if (access) {
@@ -668,16 +697,19 @@ export const assignDeviceToUser = functions.https.onCall(async (data: { deviceId
 
         return { success: true };
     } catch (error: any) {
-        console.error('Error assigning device:', error);
-        throw new functions.https.HttpsError('internal', 'Failed to update assignment');
+        logger.error('Error assigning device:', error);
+        throw new HttpsError('internal', 'Failed to update assignment');
     }
 });
 
 // ========================================
 // 7.5. ASSIGN USER TO GROUP (Group-Based Access)
 // ========================================
-export const assignUserToGroup = functions.https.onCall(async (data: { groupId: string, userId: string, access: boolean }, context) => {
-    if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'Login required');
+export const assignUserToGroup = onCall({ cors: true }, async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Login required');
+    const data = request.data as { groupId: string, userId: string, access: boolean };
+    const context = request;
+    if (!context.auth) throw new HttpsError('unauthenticated', 'Login required');
 
     const tenantId = context.auth.token.tenantId as string;
     const role = context.auth.token.role as string;
@@ -685,11 +717,11 @@ export const assignUserToGroup = functions.https.onCall(async (data: { groupId: 
 
     // 1. Authorization
     if (role !== 'tenant_admin' && role !== 'super_admin' && role !== 'admin') {
-        throw new functions.https.HttpsError('permission-denied', 'Only admins can assign groups');
+        throw new HttpsError('permission-denied', 'Only admins can assign groups');
     }
 
     if (!tenantId || !groupId || !userId) {
-        throw new functions.https.HttpsError('invalid-argument', 'Missing required fields');
+        throw new HttpsError('invalid-argument', 'Missing required fields');
     }
 
     try {
@@ -698,7 +730,7 @@ export const assignUserToGroup = functions.https.onCall(async (data: { groupId: 
             const groupSnap = await tx.get(groupRef);
 
             if (!groupSnap.exists) {
-                throw new functions.https.HttpsError('not-found', 'Group not found');
+                throw new HttpsError('not-found', 'Group not found');
             }
 
             const groupData = groupSnap.data();
@@ -734,16 +766,19 @@ export const assignUserToGroup = functions.https.onCall(async (data: { groupId: 
 
         return { success: true };
     } catch (error: any) {
-        console.error('Error in assignUserToGroup:', error);
-        throw new functions.https.HttpsError('internal', 'Failed to update group assignment');
+        logger.error('Error in assignUserToGroup:', error);
+        throw new HttpsError('internal', 'Failed to update group assignment');
     }
 });
 
 // ========================================
 // 7.7. UPDATE SWITCH NAMES (Tenant Admin/Admin)
 // ========================================
-export const updateSwitchNames = functions.https.onCall(async (data: { deviceId: string, switchNames: string[] }, context) => {
-    if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'Login required');
+export const updateSwitchNames = onCall({ cors: true }, async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Login required');
+    const data = request.data as { deviceId: string, switchNames: string[] };
+    const context = request;
+    if (!context.auth) throw new HttpsError('unauthenticated', 'Login required');
 
     const tenantId = context.auth.token.tenantId as string;
     const role = context.auth.token.role as string;
@@ -751,15 +786,15 @@ export const updateSwitchNames = functions.https.onCall(async (data: { deviceId:
 
     // 1. Authorization
     if (role !== 'tenant_admin' && role !== 'super_admin' && role !== 'admin') {
-        throw new functions.https.HttpsError('permission-denied', 'Only admins can update switch names');
+        throw new HttpsError('permission-denied', 'Only admins can update switch names');
     }
 
     if (!tenantId || !deviceId || !Array.isArray(switchNames)) {
-        throw new functions.https.HttpsError('invalid-argument', 'Missing required fields');
+        throw new HttpsError('invalid-argument', 'Missing required fields');
     }
 
     if (switchNames.length > 8) { // Safety cap
-        throw new functions.https.HttpsError('invalid-argument', 'Too many switch names');
+        throw new HttpsError('invalid-argument', 'Too many switch names');
     }
 
     try {
@@ -773,16 +808,19 @@ export const updateSwitchNames = functions.https.onCall(async (data: { deviceId:
 
         return { success: true };
     } catch (error: any) {
-        console.error('Error in updateSwitchNames:', error);
-        throw new functions.https.HttpsError('internal', 'Failed to update switch names');
+        logger.error('Error in updateSwitchNames:', error);
+        throw new HttpsError('internal', 'Failed to update switch names');
     }
 });
 
 // ========================================
 // 7.8. UPDATE DEVICE NAME (Tenant Admin Only)
 // ========================================
-export const updateDeviceName = functions.https.onCall(async (data: { deviceId: string, name: string }, context) => {
-    if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'Login required');
+export const updateDeviceName = onCall({ cors: true }, async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Login required');
+    const data = request.data as { deviceId: string, name: string };
+    const context = request;
+    if (!context.auth) throw new HttpsError('unauthenticated', 'Login required');
 
     const tenantId = context.auth.token.tenantId as string;
     const role = context.auth.token.role as string;
@@ -790,17 +828,17 @@ export const updateDeviceName = functions.https.onCall(async (data: { deviceId: 
 
     // 1. Authorization - restrict to tenant_admin (and super_admin for break-glass)
     if (role !== 'tenant_admin' && role !== 'super_admin') {
-        throw new functions.https.HttpsError('permission-denied', 'Only tenant admins can update device names');
+        throw new HttpsError('permission-denied', 'Only tenant admins can update device names');
     }
 
     if (!tenantId || !deviceId || !name || typeof name !== 'string') {
-        throw new functions.https.HttpsError('invalid-argument', 'Missing or invalid fields');
+        throw new HttpsError('invalid-argument', 'Missing or invalid fields');
     }
 
     // Basic length guardrails
     const trimmed = name.trim();
     if (trimmed.length === 0 || trimmed.length > 64) {
-        throw new functions.https.HttpsError('invalid-argument', 'Device name must be between 1 and 64 characters');
+        throw new HttpsError('invalid-argument', 'Device name must be between 1 and 64 characters');
     }
 
     try {
@@ -814,16 +852,19 @@ export const updateDeviceName = functions.https.onCall(async (data: { deviceId: 
 
         return { success: true };
     } catch (error: any) {
-        console.error('Error in updateDeviceName:', error);
-        throw new functions.https.HttpsError('internal', 'Failed to update device name');
+        logger.error('Error in updateDeviceName:', error);
+        throw new HttpsError('internal', 'Failed to update device name');
     }
 });
 
 // ========================================
 // 7.6. MANAGE GROUP (Create/Update Rooms)
 // ========================================
-export const manageGroup = functions.https.onCall(async (data: { groupId?: string, name: string, deviceIds: string[] }, context) => {
-    if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'Login required');
+export const manageGroup = onCall({ cors: true }, async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Login required');
+    const data = request.data as { groupId?: string, name: string, deviceIds: string[] };
+    const context = request;
+    if (!context.auth) throw new HttpsError('unauthenticated', 'Login required');
 
     const tenantId = context.auth.token.tenantId as string;
     const role = context.auth.token.role as string;
@@ -831,11 +872,11 @@ export const manageGroup = functions.https.onCall(async (data: { groupId?: strin
 
     // 1. Authorization
     if (role !== 'tenant_admin' && role !== 'super_admin' && role !== 'admin') {
-        throw new functions.https.HttpsError('permission-denied', 'Only admins can manage groups');
+        throw new HttpsError('permission-denied', 'Only admins can manage groups');
     }
 
     if (!tenantId || !name || !Array.isArray(deviceIds)) {
-        throw new functions.https.HttpsError('invalid-argument', 'Missing required fields');
+        throw new HttpsError('invalid-argument', 'Missing required fields');
     }
 
     try {
@@ -856,18 +897,20 @@ export const manageGroup = functions.https.onCall(async (data: { groupId?: strin
 
         return { success: true, groupId: id };
     } catch (error: any) {
-        console.error('Error in manageGroup:', error);
-        throw new functions.https.HttpsError('internal', 'Failed to manage group');
+        logger.error('Error in manageGroup:', error);
+        throw new HttpsError('internal', 'Failed to manage group');
     }
 });
-export const manageDeviceType = functions.https.onCall(async (data: ManageDeviceTypeRequest, context) => {
+export const manageDeviceType = onCall({ cors: true }, async (request) => {
+    const data = request.data as ManageDeviceTypeRequest;
+    const context = request;
     if (!context.auth || context.auth.token.role !== 'super_admin') {
-        throw new functions.https.HttpsError('permission-denied', 'Super Admin privileges required');
+        throw new HttpsError('permission-denied', 'Super Admin privileges required');
     }
 
     const { action, typeId, data: typeData } = data;
     if (!action || !typeId) {
-        throw new functions.https.HttpsError('invalid-argument', 'Missing required fields');
+        throw new HttpsError('invalid-argument', 'Missing required fields');
     }
 
     try {
@@ -894,17 +937,19 @@ export const manageDeviceType = functions.https.onCall(async (data: ManageDevice
 
         return { success: true };
     } catch (error: any) {
-        console.error('Error in manageDeviceType:', error);
-        throw new functions.https.HttpsError('internal', 'Failed to manage device type');
+        logger.error('Error in manageDeviceType:', error);
+        throw new HttpsError('internal', 'Failed to manage device type');
     }
 });
 
 // ========================================
 // 8. UPDATE PLATFORM CONFIG (Super Admin Only)
 // ========================================
-export const updatePlatformConfig = functions.https.onCall(async (data: UpdatePlatformConfigRequest, context) => {
+export const updatePlatformConfig = onCall({ cors: true }, async (request) => {
+    const data = request.data as UpdatePlatformConfigRequest;
+    const context = request;
     if (!context.auth || context.auth.token.role !== 'super_admin') {
-        throw new functions.https.HttpsError('permission-denied', 'Super Admin privileges required');
+        throw new HttpsError('permission-denied', 'Super Admin privileges required');
     }
 
     try {
@@ -918,48 +963,48 @@ export const updatePlatformConfig = functions.https.onCall(async (data: UpdatePl
 
         return { success: true };
     } catch (error: any) {
-        console.error('Error in updatePlatformConfig:', error);
-        throw new functions.https.HttpsError('internal', 'Failed to update platform configuration');
+        logger.error('Error in updatePlatformConfig:', error);
+        throw new HttpsError('internal', 'Failed to update platform configuration');
     }
 });
 
 // ========================================
 // 10. USER SUMMARY TRIGGERS
 // ========================================
-export const onUserUpdate = functions.firestore.document('users/{userId}')
-    .onWrite(async (change, context) => {
-        await recalculateUserSummary(context.params.userId);
-    });
+export const onUserUpdate = onDocumentWritten('users/{userId}', async (event) => {
+    if (!event.data) return;
+    await recalculateUserSummary(event.params.userId);
+});
 
-export const onDeviceAssignmentChange = functions.firestore.document('tenants/{tenantId}/device_users/{mappingId}')
-    .onWrite(async (change, context) => {
-        const data = change.after.exists ? change.after.data() : change.before.data();
-        if (data?.userId) {
-            await recalculateUserSummary(data.userId);
-        }
-    });
+export const onDeviceAssignmentChange = onDocumentWritten('tenants/{tenantId}/device_users/{mappingId}', async (event) => {
+    if (!event.data) return;
+    const data = event.data.after.exists ? event.data.after.data() : event.data.before.data();
+    if (data?.userId) {
+        await recalculateUserSummary(data.userId);
+    }
+});
 
-export const onDeviceChange = functions.firestore.document('tenants/{tenantId}/devices/{deviceId}')
-    .onWrite(async (change, context) => {
-        // If device switches change, we might need to update summaries for ALL users assigned to this device
-        const tenantId = context.params.tenantId;
-        const deviceId = context.params.deviceId;
+export const onDeviceChange = onDocumentWritten('tenants/{tenantId}/devices/{deviceId}', async (event) => {
+    if (!event.data) return;
+    const { tenantId, deviceId } = event.params;
 
-        const assignmentsSnap = await db.collection('tenants').doc(tenantId).collection('device_users')
-            .where('deviceId', '==', deviceId).get();
+    const assignmentsSnap = await admin.firestore().collection('tenants').doc(tenantId).collection('device_users')
+        .where('deviceId', '==', deviceId).get();
 
-        const userIds = assignmentsSnap.docs.map(doc => doc.data().userId);
-        await Promise.all(userIds.map(uid => recalculateUserSummary(uid)));
-    });
-export const setUserActiveStatus = functions.https.onCall(async (data: SetUserActiveStatusRequest, context) => {
+    const userIds = assignmentsSnap.docs.map(doc => doc.data().userId);
+    await Promise.all(userIds.map(uid => recalculateUserSummary(uid)));
+});
+export const setUserActiveStatus = onCall({ cors: true }, async (request) => {
+    const data = request.data as SetUserActiveStatusRequest;
+    const context = request;
     // 1. Authenticate & Verify Super Admin
     if (!context.auth || context.auth.token.role !== 'super_admin') {
-        throw new functions.https.HttpsError('permission-denied', 'Super Admin privileges required');
+        throw new HttpsError('permission-denied', 'Super Admin privileges required');
     }
 
     const { userId, active } = data;
     if (!userId || typeof active !== 'boolean') {
-        throw new functions.https.HttpsError('invalid-argument', 'Invalid payload');
+        throw new HttpsError('invalid-argument', 'Invalid payload');
     }
 
     try {
@@ -976,13 +1021,12 @@ export const setUserActiveStatus = functions.https.onCall(async (data: SetUserAc
 
         return { success: true };
     } catch (error: any) {
-        console.error('Error in setUserActiveStatus:', error);
-        throw new functions.https.HttpsError('internal', 'Failed to update user status');
+        logger.error('Error in setUserActiveStatus:', error);
+        throw new HttpsError('internal', 'Failed to update user status');
     }
 });
 
-export const getDeviceToken = functions.https.onRequest(
-    async (req: functions.https.Request, res: functions.Response) => {
+export const getDeviceToken = onRequest({ cors: true }, async (req: Request, res: Response) => {
         // Only allow POST
         if (req.method !== "POST") {
             res.status(405).json({ error: "method not allowed" });
@@ -1038,7 +1082,7 @@ export const getDeviceToken = functions.https.onRequest(
                         macAddress: macAddress,
                         boundAt: admin.firestore.FieldValue.serverTimestamp()
                     });
-                    console.log(`[AUTH] Device ${deviceId} bound to MAC ${macAddress}`);
+                    logger.log(`[AUTH] Device ${deviceId} bound to MAC ${macAddress}`);
                 } else if (storedMac !== macAddress) {
                     // Mismatch! Start the alarm!
                     console.warn(`[AUTH] SECURITY ALERT: Device ${deviceId} attempted login with MAC ${macAddress} but is bound to ${storedMac}`);
@@ -1057,7 +1101,7 @@ export const getDeviceToken = functions.https.onRequest(
 
             res.status(200).json({ token: customToken });
         } catch (err: any) {
-            console.error("Auth Error:", err);
+            logger.error("Auth Error:", err);
             res.status(500).json({ error: "Internal Server Error" });
         }
     }
@@ -1066,22 +1110,24 @@ export const getDeviceToken = functions.https.onRequest(
 // ========================================
 // SUPER ADMIN: Get Device Access Details
 // ========================================
-export const getDeviceAccessDetails = functions.https.onCall(async (data: { deviceId: string }, context) => {
+export const getDeviceAccessDetails = onCall({ cors: true }, async (request) => {
+    const data = request.data as { deviceId: string };
+    const context = request;
     // 1. Authenticate & Verify Super Admin
     if (!context.auth || context.auth.token.role !== 'super_admin') {
-        throw new functions.https.HttpsError('permission-denied', 'Super Admin privileges required');
+        throw new HttpsError('permission-denied', 'Super Admin privileges required');
     }
 
     const { deviceId } = data;
     if (!deviceId) {
-        throw new functions.https.HttpsError('invalid-argument', 'Missing deviceId');
+        throw new HttpsError('invalid-argument', 'Missing deviceId');
     }
 
     try {
         // Get device from global registry
         const globalDevSnap = await db.collection('global_devices').doc(deviceId).get();
         if (!globalDevSnap.exists) {
-            throw new functions.https.HttpsError('not-found', 'Device not found');
+            throw new HttpsError('not-found', 'Device not found');
         }
 
         const globalDev = globalDevSnap.data();
@@ -1127,24 +1173,26 @@ export const getDeviceAccessDetails = functions.https.onCall(async (data: { devi
             }
         };
     } catch (error: any) {
-        console.error('Error in getDeviceAccessDetails:', error);
-        if (error instanceof functions.https.HttpsError) throw error;
-        throw new functions.https.HttpsError('internal', 'Failed to fetch device details');
+        logger.error('Error in getDeviceAccessDetails:', error);
+        if (error instanceof HttpsError) throw error;
+        throw new HttpsError('internal', 'Failed to fetch device details');
     }
 });
 
 // ========================================
 // SUPER ADMIN: Transfer Device to Another Tenant
 // ========================================
-export const transferDeviceToTenant = functions.https.onCall(async (data: { deviceId: string, newTenantId: string }, context) => {
+export const transferDeviceToTenant = onCall({ cors: true }, async (request) => {
+    const data = request.data as { deviceId: string, newTenantId: string };
+    const context = request;
     // 1. Authenticate & Verify Super Admin
     if (!context.auth || context.auth.token.role !== 'super_admin') {
-        throw new functions.https.HttpsError('permission-denied', 'Super Admin privileges required');
+        throw new HttpsError('permission-denied', 'Super Admin privileges required');
     }
 
     const { deviceId, newTenantId } = data;
     if (!deviceId || !newTenantId) {
-        throw new functions.https.HttpsError('invalid-argument', 'Missing required fields');
+        throw new HttpsError('invalid-argument', 'Missing required fields');
     }
 
     try {
@@ -1152,7 +1200,7 @@ export const transferDeviceToTenant = functions.https.onCall(async (data: { devi
             // 1. Verify new tenant exists
             const newTenantSnap = await tx.get(db.collection('tenants').doc(newTenantId));
             if (!newTenantSnap.exists) {
-                throw new functions.https.HttpsError('not-found', 'Target tenant not found');
+                throw new HttpsError('not-found', 'Target tenant not found');
             }
 
             // 2. Get device from global registry
@@ -1160,7 +1208,7 @@ export const transferDeviceToTenant = functions.https.onCall(async (data: { devi
             const globalDevSnap = await tx.get(globalDevRef);
 
             if (!globalDevSnap.exists) {
-                throw new functions.https.HttpsError('not-found', 'Device not found');
+                throw new HttpsError('not-found', 'Device not found');
             }
 
             const globalDev = globalDevSnap.data();
@@ -1203,24 +1251,26 @@ export const transferDeviceToTenant = functions.https.onCall(async (data: { devi
 
         return { success: true };
     } catch (error: any) {
-        console.error('Error in transferDeviceToTenant:', error);
-        if (error instanceof functions.https.HttpsError) throw error;
-        throw new functions.https.HttpsError('internal', 'Failed to transfer device');
+        logger.error('Error in transferDeviceToTenant:', error);
+        if (error instanceof HttpsError) throw error;
+        throw new HttpsError('internal', 'Failed to transfer device');
     }
 });
 
 // ========================================
 // SUPER ADMIN: Get User Device Access
 // ========================================
-export const getUserDeviceAccess = functions.https.onCall(async (data: { userEmailOrId: string }, context) => {
+export const getUserDeviceAccess = onCall({ cors: true }, async (request) => {
+    const data = request.data as { userEmailOrId: string };
+    const context = request;
     // 1. Authenticate & Verify Super Admin
     if (!context.auth || context.auth.token.role !== 'super_admin') {
-        throw new functions.https.HttpsError('permission-denied', 'Super Admin privileges required');
+        throw new HttpsError('permission-denied', 'Super Admin privileges required');
     }
 
     const { userEmailOrId } = data;
     if (!userEmailOrId) {
-        throw new functions.https.HttpsError('invalid-argument', 'Missing user identifier');
+        throw new HttpsError('invalid-argument', 'Missing user identifier');
     }
 
     try {
@@ -1241,7 +1291,7 @@ export const getUserDeviceAccess = functions.https.onCall(async (data: { userEma
         }
 
         if (!userId) {
-            throw new functions.https.HttpsError('not-found', 'User not found');
+            throw new HttpsError('not-found', 'User not found');
         }
 
         // Get user profile
@@ -1304,24 +1354,26 @@ export const getUserDeviceAccess = functions.https.onCall(async (data: { userEma
             }
         };
     } catch (error: any) {
-        console.error('Error in getUserDeviceAccess:', error);
-        if (error instanceof functions.https.HttpsError) throw error;
-        throw new functions.https.HttpsError('internal', 'Failed to fetch user access');
+        logger.error('Error in getUserDeviceAccess:', error);
+        if (error instanceof HttpsError) throw error;
+        throw new HttpsError('internal', 'Failed to fetch user access');
     }
 });
 
 // ========================================
 // SUPER ADMIN: Revoke User Device Access (Emergency Override)
 // ========================================
-export const revokeUserDeviceAccess = functions.https.onCall(async (data: { userId: string, deviceId: string }, context) => {
+export const revokeUserDeviceAccess = onCall({ cors: true }, async (request) => {
+    const data = request.data as { userId: string, deviceId: string };
+    const context = request;
     // 1. Authenticate & Verify Super Admin
     if (!context.auth || context.auth.token.role !== 'super_admin') {
-        throw new functions.https.HttpsError('permission-denied', 'Super Admin privileges required');
+        throw new HttpsError('permission-denied', 'Super Admin privileges required');
     }
 
     const { userId, deviceId } = data;
     if (!userId || !deviceId) {
-        throw new functions.https.HttpsError('invalid-argument', 'Missing required fields');
+        throw new HttpsError('invalid-argument', 'Missing required fields');
     }
 
     try {
@@ -1330,7 +1382,7 @@ export const revokeUserDeviceAccess = functions.https.onCall(async (data: { user
         const tenantId = userSnap.data()?.tenantId || userSnap.data()?.currentTenantId;
 
         if (!tenantId) {
-            throw new functions.https.HttpsError('not-found', 'User has no tenant');
+            throw new HttpsError('not-found', 'User has no tenant');
         }
 
         await db.runTransaction(async (tx) => {
@@ -1339,7 +1391,7 @@ export const revokeUserDeviceAccess = functions.https.onCall(async (data: { user
 
             const deviceSnap = await tx.get(deviceRef);
             if (!deviceSnap.exists) {
-                throw new functions.https.HttpsError('not-found', 'Device not found in user\'s tenant');
+                throw new HttpsError('not-found', 'Device not found in user\'s tenant');
             }
 
             // Revoke access
@@ -1353,29 +1405,31 @@ export const revokeUserDeviceAccess = functions.https.onCall(async (data: { user
 
         return { success: true };
     } catch (error: any) {
-        console.error('Error in revokeUserDeviceAccess:', error);
-        if (error instanceof functions.https.HttpsError) throw error;
-        throw new functions.https.HttpsError('internal', 'Failed to revoke access');
+        logger.error('Error in revokeUserDeviceAccess:', error);
+        if (error instanceof HttpsError) throw error;
+        throw new HttpsError('internal', 'Failed to revoke access');
     }
 });
 
-export const resetDeviceHardware = functions.https.onCall(async (data: { deviceId: string }, context) => {
+export const resetDeviceHardware = onCall({ cors: true }, async (request) => {
+    const data = request.data as { deviceId: string };
+    const context = request;
     // 1. Authenticate & Verify Role (Admin only)
-    if (!context.auth) {
-        throw new functions.https.HttpsError('unauthenticated', 'Login required');
+    if (!request.auth) {
+        throw new HttpsError('unauthenticated', 'Login required');
     }
 
     const { deviceId } = data;
-    const role = context.auth.token.role as string;
+    const role = request.auth.token.role as string;
     const tenantId = context.auth.token.tenantId as string;
 
     const isAdmin = ['super_admin', 'tenant_admin', 'admin'].includes(role);
     if (!isAdmin) {
-        throw new functions.https.HttpsError('permission-denied', 'Only admins can reset hardware locks');
+        throw new HttpsError('permission-denied', 'Only admins can reset hardware locks');
     }
 
     if (!deviceId) {
-        throw new functions.https.HttpsError('invalid-argument', 'Missing deviceId');
+        throw new HttpsError('invalid-argument', 'Missing deviceId');
     }
 
     try {
@@ -1385,7 +1439,7 @@ export const resetDeviceHardware = functions.https.onCall(async (data: { deviceI
         if (!deviceDoc.exists) {
             // Check global devices if super_admin? 
             // For now, let's enforce tenant ownership for safety.
-            throw new functions.https.HttpsError('not-found', 'Device not found in your organization');
+            throw new HttpsError('not-found', 'Device not found in your organization');
         }
 
         // 3. Clear the MAC binding
@@ -1401,7 +1455,7 @@ export const resetDeviceHardware = functions.https.onCall(async (data: { deviceI
         return { success: true };
     } catch (error: any) {
         console.error("Error resetting hardware:", error);
-        throw new functions.https.HttpsError('internal', "Failed to reset hardware lock");
+        throw new HttpsError('internal', "Failed to reset hardware lock");
     }
 });
 

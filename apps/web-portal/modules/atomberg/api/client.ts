@@ -1,6 +1,6 @@
 import { getAuth } from 'firebase/auth';
 
-const BASE_URL = process.env.NEXT_PUBLIC_FIREBASE_FUNCTIONS_URL || 'http://localhost:5001/ghar-switch/us-central1';
+const BASE_URL = process.env.NEXT_PUBLIC_FIREBASE_FUNCTIONS_URL || 'https://us-central1-gharswitch.cloudfunctions.net';
 
 // Function to get the Firebase ID Token
 const getAuthToken = async () => {
@@ -15,7 +15,7 @@ const getAuthToken = async () => {
 // Helper for authenticated fetch requests
 const fetchWithAuth = async (endpoint: string, body: any) => {
     const token = await getAuthToken();
-    
+
     const response = await fetch(`${BASE_URL}${endpoint}`, {
         method: 'POST',
         headers: {
@@ -26,11 +26,11 @@ const fetchWithAuth = async (endpoint: string, body: any) => {
     });
 
     const data = await response.json();
-    
+
     if (!response.ok) {
         throw { response: { data } }; // Mimic axios error structure for the UI
     }
-    
+
     return data;
 };
 

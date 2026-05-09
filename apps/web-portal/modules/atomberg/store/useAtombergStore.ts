@@ -1,12 +1,12 @@
 import { create } from 'zustand';
 
-interface DeviceState {
+export interface DeviceState {
     power: boolean;
     speed: number;
     syncStatus: 'SYNCED' | 'PENDING' | 'FAILED';
 }
 
-interface AtombergStore {
+export interface AtombergStore {
     // We store optimistic states keyed by deviceId
     optimisticStates: Record<string, DeviceState>;
     setOptimisticState: (deviceId: string, state: Partial<DeviceState>) => void;

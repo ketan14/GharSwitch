@@ -1,6 +1,6 @@
 const ATOMBERG_BASE_URL =
     process.env.ATOMBERG_BASE_URL ||
-    'https://mock-api.atomberg.com/v1';
+    'https://api.atomberg.com/v1';
 
 export interface AtombergAuthResponse {
     accessToken: string;
@@ -49,7 +49,7 @@ export class AtombergApiClient {
     static async discoverDevices(accessToken: string): Promise<AtombergDevice[]> {
         const response = await fetch(`${ATOMBERG_BASE_URL}/devices`, {
             method: 'GET',
-            headers: { 
+            headers: {
                 'Authorization': `Bearer ${accessToken}`,
                 'Content-Type': 'application/json'
             }
@@ -66,7 +66,7 @@ export class AtombergApiClient {
         console.log(`Sending command to Atomberg Device ${deviceId}:`, payload);
         const response = await fetch(`${ATOMBERG_BASE_URL}/devices/${deviceId}/command`, {
             method: 'POST',
-            headers: { 
+            headers: {
                 'Authorization': `Bearer ${accessToken}`,
                 'Content-Type': 'application/json'
             },

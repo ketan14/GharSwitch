@@ -13,6 +13,7 @@
         "react": "latest",
         "react-dom": "latest",
         "firebase": "latest",
+        "zustand": "^4.5.0",
         "@ghar-switch/domain-types": "*",
         "@ghar-switch/constants": "*"
     },
